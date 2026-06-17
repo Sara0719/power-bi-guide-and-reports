@@ -709,6 +709,14 @@
         <div class="container">
             <h1>🚀 Welcome to Power BI</h1>
             <p>Transform Your Data Into Actionable Insights</p>
+            <!--<div class="hero-buttons">
+                <button class="btn btn-primary" onclick="document.getElementById('overview').scrollIntoView({behavior: 'smooth'})">
+                    Start Learning
+                </button>
+                <button class="btn btn-secondary" onclick="alert('Download our complete guide!')">
+                    Download Guide
+                </button>
+            </div>-->
         </div>
     </div>
 
@@ -881,6 +889,12 @@
                         <td>❌ Not Applicable</td>
                         <td><span class="badge badge-success">✅ Easy</span></td>
                     </tr>
+                    <!--<tr>
+                        <td><strong>Drill-down Analysis</strong></td>
+                        <td>⚠️ Limited</td>
+                        <td>❌ Not Possible</td>
+                        <td><span class="badge badge-success">✅ Full Support</span></td>
+                    </tr>-->
                     <tr>
                         <td><strong>Sharing & Collaboration</strong></td>
                         <td>⚠️ Email/File Share</td>
@@ -899,8 +913,69 @@
                         <td>⚠️ Basic</td>
                         <td><span class="badge badge-success">✅ Enterprise-grade</span></td>
                     </tr>
+                    
                 </tbody>
             </table>
+
+           <!-- <h3 style="margin-top: 40px;">Detailed Comparison Cards</h3>
+
+            <div class="comparison-card excel">
+                <div class="tool-icon"><i class="fas fa-file-excel"></i></div>
+                <h4>Excel</h4>
+                <p><strong>Best for:</strong> Basic calculations, small datasets, personal analysis</p>
+                <ul class="feature-list">
+                    <li>Limited to ~1 million rows per sheet</li>
+                    <li>Manual data refresh required</li>
+                    <li>Difficult to manage multiple data sources</li>
+                    <li>Poor visualization for large datasets</li>
+                    <li>Static sharing via email/files</li>
+                    <li>Time-consuming manual updates</li>
+                </ul>
+            </div>
+
+            <div class="comparison-card ppt">
+                <div class="tool-icon"><i class="fas fa-presentation"></i></div>
+                <h4>PowerPoint</h4>
+                <p><strong>Best for:</strong> Presentations, one-time reports, storytelling</p>
+                <ul class="feature-list">
+                    <li>Static content only</li>
+                    <li>No data interactivity</li>
+                    <li>Cannot connect to live data sources</li>
+                    <li>Manual data copy & paste required</li>
+                    <li>Data becomes outdated quickly</li>
+                    <li>No drill-down or filtering capability</li>
+                </ul>
+            </div>
+
+            <div class="comparison-card powerbi">
+                <div class="tool-icon"><i class="fas fa-chart-bar"></i></div>
+                <h4>Power BI</h4>
+                <p><strong>Best for:</strong> Enterprise analytics, real-time dashboards, data-driven decisions</p>
+                <ul class="feature-list">
+                    <li>Unlimited dataset capacity</li>
+                    <li>Automatic real-time data refresh</li>
+                    <li>Connect 4+ data sources seamlessly</li>
+                    <li>Interactive, drill-down dashboards</li>
+                    <li>Secure cloud-based sharing</li>
+                    <li>Always up-to-date insights</li>
+                </ul>
+            </div>
+
+            <div class="info-box">
+                <div class="info-box-icon">
+                    <i class="fas fa-star"></i>
+                </div>
+                <div class="info-box-content">
+                    <h4>Key Advantages of Power BI</h4>
+                    <p>
+                        ⭐ <strong>Real-Time Insights:</strong> Your dashboards are always current with automatic refreshes<br>
+                        ⭐ <strong>Self-Service Analytics:</strong> Non-technical users can explore data independently<br>
+                        ⭐ <strong>Scalability:</strong> Handles enterprise-scale data without performance issues<br>
+                        ⭐ <strong>Integration:</strong> Works seamlessly with Microsoft 365 and other tools<br>
+                        ⭐ <strong>Cost-Effective:</strong> Better ROI compared to manual reporting processes
+                    </p>
+                </div>-->
+            </div>
         </section>
 
         <!-- Architecture Section -->
@@ -919,9 +994,13 @@
                         <li><strong>Company Server:</strong> Enterprise deployment hub</li>
                     </ul>
                 </div>
-                <div class="image-placeholder">
-                    <i class="fas fa-cube"></i> Architecture Diagram
-                </div>
+                <div class="image-placeholder" style="text-align: center; padding: 0px;">
+    <img src="C:\Users\S0151482\Desktop\Dashboard.png" 
+         alt="Architecture Diagram" 
+         style="max-width: 110%; height: auto; border-radius: 10px;">
+</div>
+
+				
             </div>
 
             <h3>Data Flow Timeline</h3>
@@ -1422,6 +1501,73 @@ Password=YourPassword;
                     </tr>
                 </tbody>
             </table>
+
+            <!--<h3 style="margin-top: 40px;">Troubleshooting Guide</h3>
+            <div class="accordion">
+                <div class="accordion-item">
+                    <div class="accordion-header" onclick="toggleAccordion(this)">
+                        <span>❌ Data not refreshing automatically</span>
+                        <i class="fas fa-chevron-down"></i>
+                    </div>
+                    <div class="accordion-content">
+                        <ul class="feature-list">
+                            <li>Check that Data Gateway is running on your server</li>
+                            <li>Verify refresh schedule is configured in Power BI Service</li>
+                            <li>Check gateway status in "Manage gateways" settings</li>
+                            <li>Review refresh history for error messages</li>
+                            <li>Verify data source credentials haven't expired</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="accordion-item">
+                    <div class="accordion-header" onclick="toggleAccordion(this)">
+                        <span>❌ Dashboard loading slowly</span>
+                        <i class="fas fa-chevron-down"></i>
+                    </div>
+                    <div class="accordion-content">
+                        <ul class="feature-list">
+                            <li>Optimize data model by removing unnecessary columns</li>
+                            <li>Reduce number of visuals on a single page</li>
+                            <li>Use aggregations for large datasets</li>
+                            <li>Check for complex DAX formulas causing slowdown</li>
+                            <li>Consider DirectQuery vs Import mode for large datasets</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="accordion-item">
+                    <div class="accordion-header" onclick="toggleAccordion(this)">
+                        <span>❌ Cannot connect to SQL database</span>
+                        <i class="fas fa-chevron-down"></i>
+                    </div>
+                    <div class="accordion-content">
+                        <ul class="feature-list">
+                            <li>Verify SQL Server is running and accessible</li>
+                            <li>Check database credentials are correct</li>
+                            <li>Ensure firewall allows Power BI to access server</li>
+                            <li>For on-premise DB: Configure Data Gateway</li>
+                            <li>Test connection using SQL Server Management Studio</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="accordion-item">
+                    <div class="accordion-header" onclick="toggleAccordion(this)">
+                        <span>❌ Cannot see shared reports</span>
+                        <i class="fas fa-chevron-down"></i>
+                    </div>
+                    <div class="accordion-content">
+                        <ul class="feature-list">
+                            <li>Verify you have access to the workspace</li>
+                            <li>Check that sharing permissions are configured</li>
+                            <li>Ensure your Power BI user account is active</li>
+                            <li>Clear browser cache and try again</li>
+                            <li>Contact workspace admin if access is denied</li>
+                        </ul>
+                    </div>
+                </div>-->
+            </div>
         </section>
 
     </div>
@@ -1436,6 +1582,10 @@ Password=YourPassword;
                 <a href="#architecture">Architecture</a>
                 <a href="#benefits">Benefits</a>
             </div>
+           <!-- <p style="margin: 20px 0;">
+                <strong>Power BI Comprehensive Training Guide</strong><br>
+                For Interns & New Team Members
+            </p>-->
             <p style="opacity: 0.8; margin: 20px 0;">
                 This presentation covers data integration, Microsoft Fabric, Data Gateway setup, and automated refresh configurations
             </p>
