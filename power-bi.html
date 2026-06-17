@@ -649,6 +649,41 @@
             color: var(--hitachi-blue);
             border: 3px dashed var(--hitachi-blue);
         }
+
+        /* Comparison Cards */
+        .comparison-card {
+            background: linear-gradient(135deg, var(--hitachi-light) 0%, white 100%);
+            padding: 30px;
+            border-radius: 8px;
+            border: 2px solid var(--hitachi-blue);
+            margin: 15px 0;
+            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.08);
+        }
+
+        .comparison-card.excel {
+            border-left: 8px solid #217346;
+        }
+
+        .comparison-card.ppt {
+            border-left: 8px solid #D83B01;
+        }
+
+        .comparison-card.powerbi {
+            border-left: 8px solid var(--hitachi-blue);
+            background: linear-gradient(135deg, rgba(0, 102, 204, 0.05) 0%, white 100%);
+        }
+
+        .comparison-card h4 {
+            color: var(--hitachi-dark);
+            margin-bottom: 15px;
+            font-size: 1.3em;
+        }
+
+        .comparison-card .tool-icon {
+            font-size: 2em;
+            margin-bottom: 10px;
+            display: inline-block;
+        }
     </style>
 </head>
 <body>
@@ -662,8 +697,8 @@
             <ul class="nav-links">
                 <li><a href="#overview">Overview</a></li>
                 <li><a href="#datasources">Data Sources</a></li>
+                <li><a href="#comparison">Why Power BI</a></li>
                 <li><a href="#architecture">Architecture</a></li>
-                <li><a href="#fabric">Fabric & Gateway</a></li>
                 <li><a href="#benefits">Benefits</a></li>
             </ul>
         </div>
@@ -674,14 +709,6 @@
         <div class="container">
             <h1>🚀 Welcome to Power BI</h1>
             <p>Transform Your Data Into Actionable Insights</p>
-            <div class="hero-buttons">
-                <button class="btn btn-primary" onclick="document.getElementById('overview').scrollIntoView({behavior: 'smooth'})">
-                    Start Learning
-                </button>
-                <button class="btn btn-secondary" onclick="alert('Download our complete guide!')">
-                    Download Guide
-                </button>
-            </div>
         </div>
     </div>
 
@@ -697,7 +724,7 @@
 
             <div class="stats-grid">
                 <div class="stat-box">
-                    <div class="stat-number">3+</div>
+                    <div class="stat-number">4+</div>
                     <div class="stat-label">Data Sources Connected</div>
                 </div>
                 <div class="stat-box">
@@ -716,7 +743,7 @@
 
             <h3>Key Capabilities</h3>
             <ul class="feature-list">
-                <li><strong>Data Integration:</strong> Connect to SQL databases, SharePoint, Excel, and more</li>
+                <li><strong>Data Integration:</strong> Connect to SQL databases, SharePoint, Excel, MS Forms, and more</li>
                 <li><strong>Real-time Analytics:</strong> Monitor KPIs and metrics as they happen</li>
                 <li><strong>Interactive Dashboards:</strong> Create stunning visual reports</li>
                 <li><strong>Automated Refresh:</strong> Schedule automatic data updates</li>
@@ -772,6 +799,20 @@
                 </div>
             </div>
 
+            <div class="data-source">
+                <div class="data-source-icon">
+                    <i class="fas fa-clipboard-list"></i>
+                </div>
+                <div class="data-source-content">
+                    <h4>Microsoft Forms</h4>
+                    <p>Connect directly to MS Forms responses for survey data, feedback collection, and form submissions. Automatically populate reports with survey results.</p>
+                    <div>
+                        <span class="badge badge-success">Dynamic</span>
+                        <span class="badge badge-primary">Auto-Refresh</span>
+                    </div>
+                </div>
+            </div>
+
             <h3 style="margin-top: 40px;">Data Integration Process</h3>
             <div class="process-flow">
                 <div class="flow-step">
@@ -792,6 +833,76 @@
             </div>
         </section>
 
+        <!-- Comparison Section -->
+        <section id="comparison">
+            <h2><i class="fas fa-balance-scale"></i> Why Power BI? Compared to Excel & PowerPoint</h2>
+            <p style="margin-bottom: 30px; font-size: 1.1em;">
+                Power BI offers significant advantages over traditional tools like Excel and PowerPoint for data analysis and reporting.
+            </p>
+
+            <h3>Direct Comparison</h3>
+            <table class="comparison-table">
+                <thead>
+                    <tr>
+                        <th style="font-weight: bold;">Feature / Capability</th>
+                        <th><i class="fas fa-file-excel"></i> Excel</th>
+                        <th><i class="fas fa-presentation"></i> PowerPoint</th>
+                        <th><i class="fas fa-chart-bar"></i> Power BI</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>Real-time Data Updates</strong></td>
+                        <td>❌ Manual</td>
+                        <td>❌ Not Possible</td>
+                        <td><span class="badge badge-success">✅ Automatic</span></td>
+                    </tr>
+                    <tr>
+                        <td><strong>Large Dataset Handling</strong></td>
+                        <td>⚠️ Limited (Max 1M rows)</td>
+                        <td>❌ Not Suitable</td>
+                        <td><span class="badge badge-success">✅ Unlimited</span></td>
+                    </tr>
+                    <tr>
+                        <td><strong>Interactive Dashboards</strong></td>
+                        <td>⚠️ Basic</td>
+                        <td>❌ Static Only</td>
+                        <td><span class="badge badge-success">✅ Advanced</span></td>
+                    </tr>
+                    <tr>
+                        <td><strong>Data Integration</strong></td>
+                        <td>⚠️ Manual Copy/Paste</td>
+                        <td>❌ Not Applicable</td>
+                        <td><span class="badge badge-success">✅ Automatic</span></td>
+                    </tr>
+                    <tr>
+                        <td><strong>Multiple Data Sources</strong></td>
+                        <td>⚠️ Difficult</td>
+                        <td>❌ Not Applicable</td>
+                        <td><span class="badge badge-success">✅ Easy</span></td>
+                    </tr>
+                    <tr>
+                        <td><strong>Sharing & Collaboration</strong></td>
+                        <td>⚠️ Email/File Share</td>
+                        <td>⚠️ File Share Only</td>
+                        <td><span class="badge badge-success">✅ Web-based & Secure</span></td>
+                    </tr>
+                    <tr>
+                        <td><strong>Mobile Access</strong></td>
+                        <td>⚠️ Limited</td>
+                        <td>⚠️ Limited</td>
+                        <td><span class="badge badge-success">✅ Full Support</span></td>
+                    </tr>
+                    <tr>
+                        <td><strong>Security & Access Control</strong></td>
+                        <td>⚠️ Basic</td>
+                        <td>⚠️ Basic</td>
+                        <td><span class="badge badge-success">✅ Enterprise-grade</span></td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+
         <!-- Architecture Section -->
         <section id="architecture">
             <h2><i class="fas fa-sitemap"></i> Architecture & Setup</h2>
@@ -801,9 +912,8 @@
                 <div>
                     <h4 style="color: var(--hitachi-dark); margin-bottom: 20px;">System Components</h4>
                     <ul class="feature-list">
-                        <li><strong>Data Sources:</strong> SQL, SharePoint, Excel files</li>
+                        <li><strong>Data Sources:</strong> SQL, SharePoint, Excel, MS Forms</li>
                         <li><strong>Power BI Desktop:</strong> Design and development environment</li>
-                        <li><strong>Power BI Service:</strong> Cloud publishing and sharing platform</li>
                         <li><strong>Microsoft Fabric:</strong> Unified analytics platform</li>
                         <li><strong>Data Gateway:</strong> Secure on-premise connectivity</li>
                         <li><strong>Company Server:</strong> Enterprise deployment hub</li>
@@ -820,7 +930,7 @@
                     <div class="timeline-dot"></div>
                     <div class="timeline-content">
                         <h4>1. Data Extraction</h4>
-                        <p>Power BI extracts data from SQL databases, SharePoint lists, and Excel files. Each source has its own connector and authentication method.</p>
+                        <p>Power BI extracts data from SQL databases, SharePoint lists, Excel files, and MS Forms. Each source has its own connector and authentication method.</p>
                     </div>
                 </div>
 
@@ -942,21 +1052,6 @@
                 </div>
             </div>
 
-            <h3>Gateway Setup Architecture</h3>
-            <div class="process-flow" style="margin: 40px 0;">
-                <div class="flow-step" style="width: auto; height: auto; border-radius: 8px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
-                    <span style="font-size: 0.8em;">☁️<br>Power BI<br>Cloud</span>
-                </div>
-                <div class="flow-arrow">⟷</div>
-                <div class="flow-step" style="width: auto; height: auto; border-radius: 8px; background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
-                    <span style="font-size: 0.8em;">🔗<br>Data<br>Gateway</span>
-                </div>
-                <div class="flow-arrow">⟷</div>
-                <div class="flow-step" style="width: auto; height: auto; border-radius: 8px; background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">
-                    <span style="font-size: 0.8em;">🏢<br>Company<br>Server</span>
-                </div>
-            </div>
-
             <h3>Key Benefits of Gateway</h3>
             <div class="grid">
                 <div class="card">
@@ -983,56 +1078,6 @@
                     <p>Always-on connection with failover and redundancy options</p>
                 </div>
             </div>
-
-            <h3>Automated Refresh Process</h3>
-            <table class="comparison-table">
-                <thead>
-                    <tr>
-                        <th>Time</th>
-                        <th>Action</th>
-                        <th>Status</th>
-                        <th>Details</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td>06:00 AM</td>
-                        <td>Trigger Refresh</td>
-                        <td><span class="badge badge-success">Success</span></td>
-                        <td>Scheduled refresh initiated by Fabric</td>
-                    </tr>
-                    <tr>
-                        <td>06:01 AM</td>
-                        <td>Gateway Connection</td>
-                        <td><span class="badge badge-success">Connected</span></td>
-                        <td>Data Gateway establishes secure tunnel</td>
-                    </tr>
-                    <tr>
-                        <td>06:02 AM</td>
-                        <td>Extract Data</td>
-                        <td><span class="badge badge-success">Complete</span></td>
-                        <td>Data pulled from company SQL server</td>
-                    </tr>
-                    <tr>
-                        <td>06:03 AM</td>
-                        <td>Transform Data</td>
-                        <td><span class="badge badge-success">Complete</span></td>
-                        <td>Data processing and validation</td>
-                    </tr>
-                    <tr>
-                        <td>06:04 AM</td>
-                        <td>Load to Fabric</td>
-                        <td><span class="badge badge-success">Complete</span></td>
-                        <td>Data updated in Microsoft Fabric</td>
-                    </tr>
-                    <tr>
-                        <td>06:05 AM</td>
-                        <td>Update Reports</td>
-                        <td><span class="badge badge-success">Ready</span></td>
-                        <td>All dashboards now show latest data</td>
-                    </tr>
-                </tbody>
-            </table>
         </section>
 
         <!-- Implementation Steps -->
@@ -1049,7 +1094,7 @@
                         <h4>Setting up your data connections</h4>
                         <ul class="feature-list">
                             <li>Open Power BI Desktop and go to "Get Data"</li>
-                            <li>Select your data source (SQL Server, SharePoint, Excel)</li>
+                            <li>Select your data source (SQL Server, SharePoint, Excel, MS Forms)</li>
                             <li>Enter connection credentials and server details</li>
                             <li>Choose tables and data you want to import</li>
                             <li>Test the connection before proceeding</li>
@@ -1188,7 +1233,7 @@ Password=YourPassword;
 
         <!-- Benefits Section -->
         <section id="benefits">
-            <h2><i class="fas fa-lightbulb"></i> Key Benefits</h2>
+            <h2><i class="fas fa-lightbulb"></i> Key Benefits of Power BI</h2>
 
             <div class="grid">
                 <div class="card">
@@ -1280,11 +1325,6 @@ Password=YourPassword;
                         <td>Difficult</td>
                         <td>High (Interactive)</td>
                     </tr>
-                    <tr>
-                        <td><strong>Cost per Report</strong></td>
-                        <td>$5,000-$10,000</td>
-                        <td>$500-$2,000</td>
-                    </tr>
                 </tbody>
             </table>
         </section>
@@ -1328,17 +1368,9 @@ Password=YourPassword;
 
                 <div class="card">
                     <div class="card-icon">
-                        <i class="fas fa-graduation-cap"></i>
-                    </div>
-                    <h4>5. Educate Users</h4>
-                    <p>Provide training, documentation, and support. Adopt best practices across teams for maximum ROI.</p>
-                </div>
-
-                <div class="card">
-                    <div class="card-icon">
                         <i class="fas fa-chart-line"></i>
                     </div>
-                    <h4>6. Iterate & Improve</h4>
+                    <h4>5. Iterate & Improve</h4>
                     <p>Gather user feedback, track usage metrics, and continuously enhance reports and dashboards.</p>
                 </div>
             </div>
@@ -1390,148 +1422,6 @@ Password=YourPassword;
                     </tr>
                 </tbody>
             </table>
-
-            <h3 style="margin-top: 40px;">Troubleshooting Guide</h3>
-            <div class="accordion">
-                <div class="accordion-item">
-                    <div class="accordion-header" onclick="toggleAccordion(this)">
-                        <span>❌ Data not refreshing automatically</span>
-                        <i class="fas fa-chevron-down"></i>
-                    </div>
-                    <div class="accordion-content">
-                        <ul class="feature-list">
-                            <li>Check that Data Gateway is running on your server</li>
-                            <li>Verify refresh schedule is configured in Power BI Service</li>
-                            <li>Check gateway status in "Manage gateways" settings</li>
-                            <li>Review refresh history for error messages</li>
-                            <li>Verify data source credentials haven't expired</li>
-                        </ul>
-                    </div>
-                </div>
-
-                <div class="accordion-item">
-                    <div class="accordion-header" onclick="toggleAccordion(this)">
-                        <span>❌ Dashboard loading slowly</span>
-                        <i class="fas fa-chevron-down"></i>
-                    </div>
-                    <div class="accordion-content">
-                        <ul class="feature-list">
-                            <li>Optimize data model by removing unnecessary columns</li>
-                            <li>Reduce number of visuals on a single page</li>
-                            <li>Use aggregations for large datasets</li>
-                            <li>Check for complex DAX formulas causing slowdown</li>
-                            <li>Consider DirectQuery vs Import mode for large datasets</li>
-                        </ul>
-                    </div>
-                </div>
-
-                <div class="accordion-item">
-                    <div class="accordion-header" onclick="toggleAccordion(this)">
-                        <span>❌ Cannot connect to SQL database</span>
-                        <i class="fas fa-chevron-down"></i>
-                    </div>
-                    <div class="accordion-content">
-                        <ul class="feature-list">
-                            <li>Verify SQL Server is running and accessible</li>
-                            <li>Check database credentials are correct</li>
-                            <li>Ensure firewall allows Power BI to access server</li>
-                            <li>For on-premise DB: Configure Data Gateway</li>
-                            <li>Test connection using SQL Server Management Studio</li>
-                        </ul>
-                    </div>
-                </div>
-
-                <div class="accordion-item">
-                    <div class="accordion-header" onclick="toggleAccordion(this)">
-                        <span>❌ Cannot see shared reports</span>
-                        <i class="fas fa-chevron-down"></i>
-                    </div>
-                    <div class="accordion-content">
-                        <ul class="feature-list">
-                            <li>Verify you have access to the workspace</li>
-                            <li>Check that sharing permissions are configured</li>
-                            <li>Ensure your Power BI user account is active</li>
-                            <li>Clear browser cache and try again</li>
-                            <li>Contact workspace admin if access is denied</li>
-                        </ul>
-                    </div>
-                </div>
-            </div>
-        </section>
-
-        <!-- Resources Section -->
-        <section>
-            <h2><i class="fas fa-graduation-cap"></i> Learning Resources</h2>
-
-            <div class="grid">
-                <div class="card">
-                    <div class="card-icon">
-                        <i class="fas fa-video"></i>
-                    </div>
-                    <h4>Video Tutorials</h4>
-                    <p>Official Microsoft Power BI YouTube channel with comprehensive guides, tips, and case studies</p>
-                </div>
-
-                <div class="card">
-                    <div class="card-icon">
-                        <i class="fas fa-book-open"></i>
-                    </div>
-                    <h4>Documentation</h4>
-                    <p>Complete official Power BI documentation covering all features and advanced topics</p>
-                </div>
-
-                <div class="card">
-                    <div class="card-icon">
-                        <i class="fas fa-community"></i>
-                    </div>
-                    <h4>Community Forums</h4>
-                    <p>Power BI community where experts help solve problems and share best practices</p>
-                </div>
-
-                <div class="card">
-                    <div class="card-icon">
-                        <i class="fas fa-certificate"></i>
-                    </div>
-                    <h4>Certifications</h4>
-                    <p>Microsoft certifications for Power BI to validate your expertise and advance your career</p>
-                </div>
-            </div>
-
-            <div class="info-box">
-                <div class="info-box-icon">
-                    <i class="fas fa-globe"></i>
-                </div>
-                <div class="info-box-content">
-                    <h4>Useful Links</h4>
-                    <p>
-                        🔗 <strong>Microsoft Power BI Home:</strong> powerbi.microsoft.com<br>
-                        🔗 <strong>Microsoft Fabric:</strong> fabric.microsoft.com<br>
-                        🔗 <strong>Power BI Desktop Download:</strong> go.microsoft.com/fwlink/p<br>
-                        🔗 <strong>DAX Function Reference:</strong> dax.guide
-                    </p>
-                </div>
-            </div>
-        </section>
-
-        <!-- CTA Section -->
-        <section style="background: linear-gradient(135deg, var(--hitachi-dark) 0%, var(--hitachi-blue) 100%); color: white;">
-            <div style="text-align: center;">
-                <h2 style="color: white; border-color: var(--accent-color);">
-                    <i class="fas fa-rocket"></i> Ready to Transform Your Data?
-                </h2>
-                <p style="font-size: 1.2em; margin: 30px 0; color: rgba(255,255,255,0.95);">
-                    Start your Power BI journey today and unlock the power of data-driven decision making
-                </p>
-                <div class="hero-buttons" style="justify-content: center;">
-                    <button class="btn btn-primary" onclick="alert('Contact your IT department to get started!')">
-                        Get Started Today
-                    </button>
-                    <button class="btn" style="background: rgba(255,255,255,0.2); color: white; border: 2px solid white;" 
-                            onclick="alert('Schedule a training session with your team!')">
-                        Schedule Training
-                    </button>
-                </div>
-            </div>
         </section>
 
     </div>
@@ -1542,14 +1432,10 @@ Password=YourPassword;
             <div class="footer-links">
                 <a href="#overview">Overview</a>
                 <a href="#datasources">Data Sources</a>
+                <a href="#comparison">Why Power BI</a>
                 <a href="#architecture">Architecture</a>
-                <a href="#fabric">Fabric & Gateway</a>
                 <a href="#benefits">Benefits</a>
             </div>
-            <p style="margin: 20px 0;">
-                <strong>Power BI Comprehensive Training Guide</strong><br>
-                For Interns & New Team Members
-            </p>
             <p style="opacity: 0.8; margin: 20px 0;">
                 This presentation covers data integration, Microsoft Fabric, Data Gateway setup, and automated refresh configurations
             </p>
