@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Software Build Gantt Chart</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+        --primary: #0066CC;
+        --primary-dark: #003399;
+        --accent: #FF6B35;
+        --success: #00B050;
+        --border: #E0E0E0;
+        --text-dark: #1a1a2e;
+        --text-light: #555;
+    }
+
+    body {
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: var(--text-dark);
+        min-height: 100vh;
+        padding: 20px;
+    }
+
+    .wrap { max-width: 1400px; margin: 0 auto; }
+
+    header {
+        background: linear-gradient(135deg, var(--primary-dark) 0%, var(--primary) 100%);
+        color: #fff;
+        padding: 30px 20px;
+        border-radius: 10px;
+        margin-bottom: 20px;
+        box-shadow: 0 10px 30px rgba(0,51,153,0.3);
+        text-align: center;
+    }
+    header h1 { font-size: 1.9em; margin-bottom: 8px; }
+    header p { opacity: .9; }
+    .back-link { display:inline-block; margin-top:14px; color:#fff; text-decoration:underline; opacity:.85; }
+
+    .panel {
+        background: #fff;
+        border-radius: 10px;
+        padding: 20px 24px;
+        margin-bottom: 20px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+    }
+
+    .panel h2 { color: var(--primary); font-size: 1.3em; margin-bottom: 12px; }
+
+    .upload-row { display:flex; flex-wrap:wrap; gap:16px; align-items:center; }
+
+    input[type="file"] {
+        border: 2px dashed var(--primary);
+        padding: 12px;
+        border-radius: 8px;
+        background: #E8F0FF;
+        cursor: pointer;
+        flex: 1 1 260px;
+    }
+
+    button, .btn {
+        background: var(--primary);
+        color: #fff;
+        border: none;
+        padding: 10px 18px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 0.95em;
+        font-weight: 600;
+        transition: .2s;
+    }
+    button:hover, .btn:hover { background: var(--primary-dark); }
+    button:disabled { background:#aaa; cursor:not-allowed; }
+    .btn-secondary { background:#6c757d; }
+    .btn-secondary:hover { background:#545b62; }
+
+    #status { font-size: 0.9em; color: var(--text-light); margin-top:10px; }
+    #status.error { color:#c0392b; font-weight:600; }
+    #status.ok { color: var(--success); font-weight:600; }
+
+    .mapping-grid {
+        display:grid;
+        grid-template-columns: repeat(auto-fit,minmax(220px,1fr));
+        gap: 14px;
+        margin-top: 14px;
+    }
+    .field { display:flex; flex-direction:column; gap:4px; }
+    .field label { font-size:.85em; font-weight:600; color:var(--text-light); }
+    .field small { color:#888; font-weight:400; }
+    select {
+        padding: 8px;
+        border-radius: 6px;
+        border: 1px solid var(--border);
+        font-size: .9em;
+    }
+
+    .toolbar { display:flex; flex-wrap:wrap; gap:12px; align-items:center; margin-top:14px; }
+    .toolbar label { font-size:.85em; color:var(--text-light); display:flex; align-items:center; gap:6px; }
+
+    #legend { display:flex; flex-wrap:wrap; gap:10px; margin-top:10px; }
+    .legend-item { display:flex; align-items:center; gap:6px; font-size:.85em; cursor:pointer; user-select:none; padding:4px 8px; border-radius:14px; border:1px solid var(--border); }
+    .legend-item.off { opacity:.35; }
+    .legend-swatch { width:14px; height:14px; border-radius:3px; display:inline-block; }
+
+    #chart-panel { overflow:auto; }
+    #chart-scroll { overflow-x:auto; overflow-y:hidden; border:1px solid var(--border); border-radius:8px; }
+    svg { display:block; font-family: inherit; }
+
+    .row-label { font-size: 12px; fill: var(--text-dark); }
+    .grid-line { stroke: #eee; stroke-width: 1; }
+    .month-line { stroke:#ccc; stroke-width:1; }
+    .axis-text { font-size: 11px; fill: var(--text-light); }
+    .bar { stroke: rgba(0,0,0,0.25); stroke-width: 0.5; rx: 3; cursor:pointer; }
+    .dep-line { fill:none; stroke:#555; stroke-width:1.4; stroke-dasharray:3,3; opacity:.85; }
+
+    #tooltip {
+        position: fixed;
+        pointer-events: none;
+        background: rgba(20,20,30,0.95);
+        color:#fff;
+        padding:8px 12px;
+        border-radius:6px;
+        font-size:.8em;
+        line-height:1.5;
+        max-width:280px;
+        display:none;
+        z-index: 999;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+
+    .empty-state { text-align:center; padding:60px 20px; color:#888; }
+    .empty-state i { font-size: 2em; display:block; margin-bottom:10px; }
+
+    .hint { font-size:.82em; color:#888; margin-top:8px; }
+    code { background:#f3f3f3; padding:1px 5px; border-radius:4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+    <header>
+        <h1>📊 Software Build Gantt Chart</h1>
+        <p>Upload an Excel (.xlsx) or CSV file to generate an interactive Gantt chart</p>
+        <a class="back-link" href="new2.html">← Back to Power BI Reports</a>
+    </header>
+
+    <div class="panel">
+        <h2>1. Upload Data</h2>
+        <div class="upload-row">
+            <input type="file" id="fileInput" accept=".xlsx,.xls,.csv">
+            <button id="loadSampleBtn" class="btn-secondary" type="button">Load Sample Data</button>
+        </div>
+        <p class="hint">
+            Expected data: one row per activity with columns for an <strong>Activity Code</strong> (activities sharing
+            a code render on the same row, in date sequence), the <strong>Software Build</strong> the activity belongs to,
+            an <strong>Activity Name</strong>, <strong>Start</strong> / <strong>End</strong> dates, and optional
+            <strong>Predecessors</strong> / <strong>Successors</strong> (comma or semicolon separated Activity IDs) used
+            to draw dependency lines.
+        </p>
+        <div id="status"></div>
+    </div>
+
+    <div class="panel" id="mappingPanel" style="display:none;">
+        <h2>2. Map Columns</h2>
+        <div class="mapping-grid" id="mappingGrid"></div>
+        <div class="toolbar">
+            <button id="renderBtn" type="button">Generate Gantt Chart</button>
+        </div>
+    </div>
+
+    <div class="panel" id="chart-panel" style="display:none;">
+        <h2>3. Gantt Chart</h2>
+        <div class="toolbar">
+            <label><input type="checkbox" id="showDepsChk" checked> Show dependency lines</label>
+            <label><input type="checkbox" id="showOverlapChk" checked> Highlight overlapping activities</label>
+        </div>
+        <div id="legend"></div>
+        <div id="chart-scroll" style="margin-top:16px;">
+            <div id="chart-empty" class="empty-state">
+                <i>📁</i>
+                No data yet — upload a file and click "Generate Gantt Chart".
+            </div>
+            <svg id="chart" width="100" height="100"></svg>
+        </div>
+    </div>
+</div>
+<div id="tooltip"></div>
+
+<script>
+(function () {
+    'use strict';
+
+    var COLUMN_TARGETS = [
+        { key: 'code',        label: 'Activity Code',   required: true,  hints: ['activity code','task code','code','sequence code','row code'] },
+        { key: 'build',       label: 'Software Build',  required: true,  hints: ['build','software build','release','version'] },
+        { key: 'name',        label: 'Activity Name',   required: true,  hints: ['activity name','task name','name','activity','task','description'] },
+        { key: 'id',          label: 'Activity ID',     required: false, hints: ['activity id','task id','id','wbs'] },
+        { key: 'start',       label: 'Start Date',      required: true,  hints: ['start date','start','begin'] },
+        { key: 'end',         label: 'End Date',        required: true,  hints: ['end date','finish date','finish','end'] },
+        { key: 'predecessors',label: 'Predecessors',    required: false, hints: ['predecessor','predecessors','producer','producers'] },
+        { key: 'successors',  label: 'Successors',      required: false, hints: ['successor','successors'] }
+    ];
+
+    var BUILD_PALETTE = ['#0066CC','#FF6B35','#00B050','#8E44AD','#E74C3C','#17A2B8','#F1C40F','#2ECC71','#E67E22','#34495E'];
+
+    var state = {
+        rawRows: [],
+        headers: [],
+        mapping: {},
+        buildColor: {},
+        hiddenBuilds: {},
+        activities: []
+    };
+
+    var fileInput = document.getElementById('fileInput');
+    var loadSampleBtn = document.getElementById('loadSampleBtn');
+    var statusEl = document.getElementById('status');
+    var mappingPanel = document.getElementById('mappingPanel');
+    var mappingGrid = document.getElementById('mappingGrid');
+    var renderBtn = document.getElementById('renderBtn');
+    var chartPanel = document.getElementById('chart-panel');
+    var chartEmpty = document.getElementById('chart-empty');
+    var svg = document.getElementById('chart');
+    var legendEl = document.getElementById('legend');
+    var tooltip = document.getElementById('tooltip');
+    var showDepsChk = document.getElementById('showDepsChk');
+    var showOverlapChk = document.getElementById('showOverlapChk');
+
+    function setStatus(msg, type) {
+        statusEl.textContent = msg;
+        statusEl.className = type || '';
+    }
+
+    function normalizeHeader(h) {
+        return String(h || '').trim().toLowerCase();
+    }
+
+    function guessColumn(target) {
+        for (var i = 0; i < state.headers.length; i++) {
+            var norm = normalizeHeader(state.headers[i]);
+            if (target.hints.indexOf(norm) !== -1) return state.headers[i];
+        }
+        for (var j = 0; j < state.headers.length; j++) {
+            var normJ = normalizeHeader(state.headers[j]);
+            for (var k = 0; k < target.hints.length; k++) {
+                if (normJ.indexOf(target.hints[k]) !== -1) return state.headers[j];
+            }
+        }
+        return '';
+    }
+
+    function buildMappingUI() {
+        mappingGrid.innerHTML = '';
+        state.mapping = {};
+        COLUMN_TARGETS.forEach(function (target) {
+            var guess = guessColumn(target);
+            state.mapping[target.key] = guess;
+
+            var field = document.createElement('div');
+            field.className = 'field';
+
+            var label = document.createElement('label');
+            label.textContent = target.label + (target.required ? ' *' : '');
+            field.appendChild(label);
+
+            var select = document.createElement('select');
+            select.dataset.key = target.key;
+
+            var noneOpt = document.createElement('option');
+            noneOpt.value = '';
+            noneOpt.textContent = '-- none --';
+            select.appendChild(noneOpt);
+
+            state.headers.forEach(function (h) {
+                var opt = document.createElement('option');
+                opt.value = h;
+                opt.textContent = h;
+                if (h === guess) opt.selected = true;
+                select.appendChild(opt);
+            });
+
+            select.addEventListener('change', function () {
+                state.mapping[target.key] = select.value;
+            });
+
+            field.appendChild(select);
+
+            if (!target.required) {
+                var small = document.createElement('small');
+                small.textContent = 'optional';
+                field.appendChild(small);
+            }
+
+            mappingGrid.appendChild(field);
+        });
+
+        mappingPanel.style.display = 'block';
+    }
+
+    function parseWorkbookRows(workbook) {
+        var sheetName = workbook.SheetNames[0];
+        var sheet = workbook.Sheets[sheetName];
+        var rows = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: true });
+        return rows;
+    }
+
+    function loadRows(rows) {
+        if (!rows.length) {
+            setStatus('The file appears to be empty.', 'error');
+            return;
+        }
+        state.rawRows = rows;
+        state.headers = Object.keys(rows[0]);
+        buildMappingUI();
+        setStatus('Loaded ' + rows.length + ' rows. Review the column mapping below, then generate the chart.', 'ok');
+    }
+
+    fileInput.addEventListener('change', function (e) {
+        var file = e.target.files[0];
+        if (!file) return;
+        setStatus('Reading "' + file.name + '"...');
+
+        var reader = new FileReader();
+        reader.onload = function (evt) {
+            try {
+                var data = evt.target.result;
+                var workbook;
+                if (/\.csv$/i.test(file.name)) {
+                    workbook = XLSX.read(data, { type: 'binary', raw: true });
+                } else {
+                    workbook = XLSX.read(data, { type: 'binary' });
+                }
+                var rows = parseWorkbookRows(workbook);
+                loadRows(rows);
+            } catch (err) {
+                console.error(err);
+                setStatus('Failed to parse file: ' + err.message, 'error');
+            }
+        };
+        reader.onerror = function () {
+            setStatus('Failed to read file.', 'error');
+        };
+        reader.readAsBinaryString(file);
+    });
+
+    function sampleCSV() {
+        return [
+            'Activity ID,Activity Code,Software Build,Activity Name,Start Date,End Date,Predecessors',
+            'A1,SEQ-100,Build 1.0,Requirements Baseline,2024-09-01,2024-09-10,',
+            'A2,SEQ-100,Build 1.0,Design Review,2024-09-11,2024-09-20,A1',
+            'A3,SEQ-100,Build 1.1,Requirements Update,2024-09-21,2024-09-30,A2',
+            'A4,SEQ-200,Build 1.0,Safety Case Development,2024-10-01,2024-10-16,A2',
+            'A5,SEQ-200,Build 1.0,Safety Appraisal,2024-10-10,2024-10-22,A4',
+            'A6,SEQ-200,Build 1.1,Safety Case Update,2024-10-17,2024-10-28,A5',
+            'A7,SEQ-300,Build 2.0,Cairo Integration Test,2024-10-05,2024-10-25,A4;A5',
+            'A8,SEQ-300,Build 2.0,Cairo Acceptance,2024-10-26,2024-11-05,A7',
+            'A9,SEQ-400,Build 2.0,Regression Testing,2024-10-12,2024-10-24,A2',
+            'A10,SEQ-400,Build 2.1,Release Candidate,2024-10-25,2024-11-02,A9;A8'
+        ].join('\n');
+    }
+
+    loadSampleBtn.addEventListener('click', function () {
+        var workbook = XLSX.read(sampleCSV(), { type: 'string', raw: true });
+        var rows = parseWorkbookRows(workbook);
+        fileInput.value = '';
+        loadRows(rows);
+        setStatus('Loaded built-in sample data (' + rows.length + ' rows). Review the mapping, then generate the chart.', 'ok');
+    });
+
+    function excelSerialToDate(value) {
+        var date = new Date(Math.round((value - 25569) * 86400 * 1000));
+        return date;
+    }
+
+    function parseDate(value) {
+        if (value === '' || value === null || value === undefined) return null;
+        if (value instanceof Date) return value;
+        if (typeof value === 'number') return excelSerialToDate(value);
+        var s = String(value).trim();
+        var d = new Date(s);
+        if (!isNaN(d.getTime())) return d;
+        var m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+        if (m) {
+            var mm = parseInt(m[1], 10) - 1;
+            var dd = parseInt(m[2], 10);
+            var yy = parseInt(m[3], 10);
+            if (yy < 100) yy += 2000;
+            var d2 = new Date(yy, mm, dd);
+            if (!isNaN(d2.getTime())) return d2;
+        }
+        return null;
+    }
+
+    function startOfDay(d) {
+        return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    }
+
+    function addDays(d, n) {
+        var r = new Date(d);
+        r.setDate(r.getDate() + n);
+        return r;
+    }
+
+    function splitList(value) {
+        if (!value) return [];
+        return String(value).split(/[,;]/).map(function (s) { return s.trim(); }).filter(Boolean);
+    }
+
+    function buildColorFor(build) {
+        if (!state.buildColor[build]) {
+            var idx = Object.keys(state.buildColor).length % BUILD_PALETTE.length;
+            state.buildColor[build] = BUILD_PALETTE[idx];
+        }
+        return state.buildColor[build];
+    }
+
+    function processActivities() {
+        var map = state.mapping;
+        var missing = COLUMN_TARGETS.filter(function (t) { return t.required && !map[t.key]; });
+        if (missing.length) {
+            setStatus('Please map required columns: ' + missing.map(function (m) { return m.label; }).join(', '), 'error');
+            return null;
+        }
+
+        state.buildColor = {};
+        var activities = [];
+        var skipped = 0;
+
+        state.rawRows.forEach(function (row, idx) {
+            var code = String(row[map.code] || '').trim();
+            var build = String(row[map.build] || 'Unassigned').trim() || 'Unassigned';
+            var name = String(row[map.name] || '').trim();
+            var start = parseDate(row[map.start]);
+            var end = parseDate(row[map.end]);
+            var id = map.id && row[map.id] !== '' ? String(row[map.id]).trim() : ('row' + idx);
+
+            if (!code || !start || !end) {
+                skipped++;
+                return;
+            }
+            if (end < start) { var tmp = start; start = end; end = tmp; }
+
+            activities.push({
+                id: id,
+                code: code,
+                build: build,
+                name: name || id,
+                start: startOfDay(start),
+                end: startOfDay(end),
+                predecessors: splitList(map.predecessors ? row[map.predecessors] : ''),
+                successors: splitList(map.successors ? row[map.successors] : ''),
+                color: buildColorFor(build)
+            });
+        });
+
+        if (!activities.length) {
+            setStatus('No valid rows found (need Activity Code, Start Date and End Date). ' + skipped + ' row(s) skipped.', 'error');
+            return null;
+        }
+
+        if (skipped) {
+            setStatus('Rendered ' + activities.length + ' activities (' + skipped + ' row(s) skipped due to missing data).', 'ok');
+        } else {
+            setStatus('Rendered ' + activities.length + ' activities.', 'ok');
+        }
+
+        return activities;
+    }
+
+    function assignLanes(rowActivities) {
+        rowActivities.sort(function (a, b) { return a.start - b.start || a.end - b.end; });
+        var lanes = [];
+        rowActivities.forEach(function (act) {
+            var placed = false;
+            for (var i = 0; i < lanes.length; i++) {
+                if (lanes[i] < act.start.getTime()) {
+                    lanes[i] = act.end.getTime();
+                    act.lane = i;
+                    placed = true;
+                    break;
+                }
+            }
+            if (!placed) {
+                act.lane = lanes.length;
+                lanes.push(act.end.getTime());
+            }
+        });
+        return lanes.length;
+    }
+
+    var LAYOUT = {
+        marginLeft: 220,
+        marginTop: 50,
+        marginBottom: 30,
+        marginRight: 40,
+        dayWidth: 14,
+        rowHeight: 34,
+        laneOffset: 12,
+        barMinHeight: 16
+    };
+
+    function render(activities) {
+        // group by code
+        var byCode = {};
+        activities.forEach(function (a) {
+            if (!byCode[a.code]) byCode[a.code] = [];
+            byCode[a.code].push(a);
+        });
+        var codes = Object.keys(byCode).sort();
+
+        var maxLanesPerCode = {};
+        codes.forEach(function (code) {
+            maxLanesPerCode[code] = assignLanes(byCode[code]);
+        });
+
+        var minDate = null, maxDate = null;
+        activities.forEach(function (a) {
+            if (!minDate || a.start < minDate) minDate = a.start;
+            if (!maxDate || a.end > maxDate) maxDate = a.end;
+        });
+        minDate = addDays(minDate, -2);
+        maxDate = addDays(maxDate, 2);
+        var totalDays = Math.max(1, Math.round((maxDate - minDate) / 86400000));
+
+        var xForDate = function (d) {
+            var days = Math.round((startOfDay(d) - minDate) / 86400000);
+            return LAYOUT.marginLeft + days * LAYOUT.dayWidth;
+        };
+
+        var rowTops = {};
+        var y = LAYOUT.marginTop;
+        codes.forEach(function (code) {
+            rowTops[code] = y;
+            var lanes = maxLanesPerCode[code];
+            var rowH = LAYOUT.rowHeight + (lanes - 1) * LAYOUT.laneOffset;
+            rowTops[code + '__height'] = rowH;
+            y += rowH;
+        });
+
+        var chartWidth = LAYOUT.marginLeft + totalDays * LAYOUT.dayWidth + LAYOUT.marginRight;
+        var chartHeight = y + LAYOUT.marginBottom;
+
+        var ns = 'http://www.w3.org/2000/svg';
+        svg.setAttribute('width', chartWidth);
+        svg.setAttribute('height', chartHeight);
+        svg.innerHTML = '';
+
+        var defs = document.createElementNS(ns, 'defs');
+        defs.innerHTML = '<marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">' +
+            '<path d="M0,0 L10,5 L0,10 z" fill="#555"></path></marker>';
+        svg.appendChild(defs);
+
+        // month gridlines + axis labels
+        var cursor = new Date(minDate);
+        cursor.setDate(1);
+        while (cursor <= maxDate) {
+            if (cursor >= minDate) {
+                var mx = xForDate(cursor);
+                var line = document.createElementNS(ns, 'line');
+                line.setAttribute('x1', mx); line.setAttribute('x2', mx);
+                line.setAttribute('y1', LAYOUT.marginTop - 20); line.setAttribute('y2', chartHeight - LAYOUT.marginBottom);
+                line.setAttribute('class', 'month-line');
+                svg.appendChild(line);
+
+                var label = document.createElementNS(ns, 'text');
+                label.setAttribute('x', mx + 4);
+                label.setAttribute('y', LAYOUT.marginTop - 26);
+                label.setAttribute('class', 'axis-text');
+                label.textContent = cursor.toLocaleDateString(undefined, { month: 'short', year: 'numeric' });
+                svg.appendChild(label);
+            }
+            cursor.setMonth(cursor.getMonth() + 1);
+        }
+
+        // row backgrounds + labels
+        codes.forEach(function (code, i) {
+            var top = rowTops[code];
+            var h = rowTops[code + '__height'];
+            if (i % 2 === 0) {
+                var rect = document.createElementNS(ns, 'rect');
+                rect.setAttribute('x', 0);
+                rect.setAttribute('y', top - 4);
+                rect.setAttribute('width', chartWidth);
+                rect.setAttribute('height', h);
+                rect.setAttribute('fill', '#f7f9fc');
+                svg.appendChild(rect);
+            }
+            var label = document.createElementNS(ns, 'text');
+            label.setAttribute('x', 10);
+            label.setAttribute('y', top + h / 2);
+            label.setAttribute('class', 'row-label');
+            label.setAttribute('dominant-baseline', 'middle');
+            label.textContent = code;
+            svg.appendChild(label);
+
+            var sep = document.createElementNS(ns, 'line');
+            sep.setAttribute('x1', 0); sep.setAttribute('x2', chartWidth);
+            sep.setAttribute('y1', top - 4); sep.setAttribute('y2', top - 4);
+            sep.setAttribute('class', 'grid-line');
+            svg.appendChild(sep);
+        });
+
+        var showOverlap = showOverlapChk.checked;
+        var barLookup = {};
+
+        codes.forEach(function (code) {
+            var top = rowTops[code];
+            byCode[code].forEach(function (act) {
+                var x1 = xForDate(act.start);
+                var x2 = xForDate(addDays(act.end, 1));
+                var w = Math.max(2, x2 - x1);
+                var isOverlap = act.lane > 0;
+                var barY = top + act.lane * LAYOUT.laneOffset;
+                var barH = LAYOUT.barMinHeight - (isOverlap ? 4 : 0);
+
+                var rect = document.createElementNS(ns, 'rect');
+                rect.setAttribute('x', x1);
+                rect.setAttribute('y', barY);
+                rect.setAttribute('width', w);
+                rect.setAttribute('height', barH);
+                rect.setAttribute('rx', 3);
+                rect.setAttribute('class', 'bar');
+                rect.setAttribute('fill', act.color);
+                rect.setAttribute('data-build', act.build);
+                var opacity = 1;
+                if (isOverlap && showOverlap) opacity = 0.55;
+                if (isOverlap && !showOverlap) opacity = 1;
+                if (isOverlap) rect.setAttribute('stroke-dasharray', showOverlap ? '2,2' : 'none');
+                rect.setAttribute('opacity', state.hiddenBuilds[act.build] ? 0 : opacity);
+                rect.style.pointerEvents = state.hiddenBuilds[act.build] ? 'none' : 'auto';
+
+                rect.addEventListener('mousemove', function (evt) {
+                    tooltip.style.display = 'block';
+                    tooltip.style.left = (evt.clientX + 14) + 'px';
+                    tooltip.style.top = (evt.clientY + 14) + 'px';
+                    tooltip.innerHTML = '<strong>' + act.name + '</strong><br>' +
+                        'Code: ' + act.code + '<br>' +
+                        'Build: ' + act.build + '<br>' +
+                        act.start.toLocaleDateString() + ' → ' + act.end.toLocaleDateString() +
+                        (act.predecessors.length ? '<br>Predecessors: ' + act.predecessors.join(', ') : '');
+                });
+                rect.addEventListener('mouseleave', function () { tooltip.style.display = 'none'; });
+
+                svg.appendChild(rect);
+
+                if (w > 30) {
+                    var text = document.createElementNS(ns, 'text');
+                    text.setAttribute('x', x1 + 4);
+                    text.setAttribute('y', barY + barH / 2);
+                    text.setAttribute('dominant-baseline', 'middle');
+                    text.setAttribute('font-size', '10px');
+                    text.setAttribute('fill', '#fff');
+                    text.textContent = act.name.length > (w / 6) ? act.name.slice(0, Math.max(1, Math.floor(w / 6))) + '…' : act.name;
+                    text.style.pointerEvents = 'none';
+                    if (!state.hiddenBuilds[act.build]) svg.appendChild(text);
+                }
+
+                barLookup[act.id] = { x1: x1, x2: x2, yMid: barY + barH / 2, build: act.build };
+            });
+        });
+
+        if (showDepsChk.checked) {
+            activities.forEach(function (act) {
+                act.predecessors.forEach(function (predId) {
+                    var from = barLookup[predId];
+                    var to = barLookup[act.id];
+                    if (!from || !to) return;
+                    if (state.hiddenBuilds[from.build] || state.hiddenBuilds[to.build]) return;
+                    var midX = (from.x2 + to.x1) / 2;
+                    var path = document.createElementNS(ns, 'path');
+                    var d = 'M ' + from.x2 + ' ' + from.yMid +
+                        ' L ' + midX + ' ' + from.yMid +
+                        ' L ' + midX + ' ' + to.yMid +
+                        ' L ' + to.x1 + ' ' + to.yMid;
+                    path.setAttribute('d', d);
+                    path.setAttribute('class', 'dep-line');
+                    path.setAttribute('marker-end', 'url(#arrow)');
+                    svg.appendChild(path);
+                });
+            });
+        }
+
+        chartEmpty.style.display = 'none';
+        svg.style.display = 'block';
+    }
+
+    function renderLegend() {
+        legendEl.innerHTML = '';
+        Object.keys(state.buildColor).sort().forEach(function (build) {
+            var item = document.createElement('div');
+            item.className = 'legend-item' + (state.hiddenBuilds[build] ? ' off' : '');
+            var swatch = document.createElement('span');
+            swatch.className = 'legend-swatch';
+            swatch.style.background = state.buildColor[build];
+            item.appendChild(swatch);
+            var text = document.createElement('span');
+            text.textContent = build;
+            item.appendChild(text);
+            item.addEventListener('click', function () {
+                state.hiddenBuilds[build] = !state.hiddenBuilds[build];
+                render(state.activities);
+                renderLegend();
+            });
+            legendEl.appendChild(item);
+        });
+    }
+
+    renderBtn.addEventListener('click', function () {
+        var activities = processActivities();
+        if (!activities) return;
+        state.activities = activities;
+        state.hiddenBuilds = {};
+        chartPanel.style.display = 'block';
+        render(activities);
+        renderLegend();
+    });
+
+    showDepsChk.addEventListener('change', function () {
+        if (state.activities.length) render(state.activities);
+    });
+    showOverlapChk.addEventListener('change', function () {
+        if (state.activities.length) render(state.activities);
+    });
+})();
+</script>
+</body>
+</html>
