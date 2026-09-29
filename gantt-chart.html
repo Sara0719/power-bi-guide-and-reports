@@ -435,33 +435,38 @@
 
     // Parses one workbook's rows into canonical rows ready for merging, handling its own
     // header detection, column mapping, merged-cell forward-fill and Project fallback.
-    function harmonizeFileRows(rows, filename) {
+    // `useFilenameFallback` is disabled for the built-in sample datasets (which are
+    // intentionally single-project/ungrouped) so their descriptive labels never get
+    // mistaken for a Project name.
+    function harmonizeFileRows(rows, filename, useFilenameFallback) {
         if (!rows.length) return { rows: [], missing: [] };
         var headers = Object.keys(rows[0]);
         var mapping = autoMapColumns(headers);
         forwardFillColumn(rows, mapping, 'product');
         forwardFillColumn(rows, mapping, 'project');
         var missing = COLUMN_TARGETS.filter(function (t) { return t.required && !mapping[t.key]; });
-        var fallbackProject = projectNameFromFilename(filename);
+        var fallbackProject = useFilenameFallback ? projectNameFromFilename(filename) : '';
         var canonical = toCanonicalRows(rows, mapping, fallbackProject);
         return { rows: canonical, missing: missing, headers: headers };
     }
 
     function loadRows(rows, sourceLabel) {
-        loadHarmonizedFiles([{ rows: rows, name: sourceLabel || 'data' }]);
+        loadHarmonizedFiles([{ rows: rows, name: sourceLabel || 'data' }], { useFilenameFallback: false });
     }
 
     // Accepts an array of { rows, name } — one entry per uploaded file (or sample
     // dataset) — harmonizes each independently, merges them into one dataset, and
     // renders the combined chart grouped by Product → Project → Build.
-    function loadHarmonizedFiles(files) {
+    function loadHarmonizedFiles(files, opts) {
+        opts = opts || {};
+        var useFilenameFallback = opts.useFilenameFallback !== false;
         var combined = [];
         var missingByFile = [];
         var totalRawRows = 0;
         files.forEach(function (f) {
             if (!f.rows.length) return;
             totalRawRows += f.rows.length;
-            var result = harmonizeFileRows(f.rows, f.name);
+            var result = harmonizeFileRows(f.rows, f.name, useFilenameFallback);
             if (result.missing.length) {
                 missingByFile.push(f.name + ': ' + result.missing.map(function (m) { return m.label; }).join(', '));
             }
@@ -741,7 +746,37 @@
             setStatus(skipped + ' row(s) skipped due to missing/invalid data.', 'error');
         }
 
-        return activities;
+        // Merge exact duplicates: the same activity (same Product/Project, Activity Name,
+        // Start and End) can appear more than once — e.g. when combining several uploaded
+        // files that share some rows, or when a source sheet repeats a row. Collapse those
+        // into a single activity instead of drawing overlapping duplicate bars, keeping the
+        // union of predecessors/successors from every duplicate.
+        var dedupMap = {};
+        var deduped = [];
+        activities.forEach(function (a) {
+            var key = [a.product, a.project, a.name.toLowerCase(), a.start.getTime(), a.end.getTime()].join('\u0001');
+            var existing = dedupMap[key];
+            if (existing) {
+                existing.predecessors = uniqueList(existing.predecessors.concat(a.predecessors));
+                existing.successors = uniqueList(existing.successors.concat(a.successors));
+                return;
+            }
+            dedupMap[key] = a;
+            deduped.push(a);
+        });
+
+        return deduped;
+    }
+
+    function uniqueList(list) {
+        var seen = {};
+        var out = [];
+        list.forEach(function (v) {
+            if (!v || seen[v]) return;
+            seen[v] = true;
+            out.push(v);
+        });
+        return out;
     }
 
     function assignLanes(rowActivities) {
@@ -839,12 +874,12 @@
         codes.forEach(function (code) {
             var m = codeMeta[code];
             if (hasProduct && m.product !== lastProduct) {
-                layoutRows.push({ type: 'group', level: 0, label: m.product || '(No Product)', range: groupRanges['P\u0001' + m.product] });
+                layoutRows.push({ type: 'group', level: 0, label: m.product || 'Standalone', range: groupRanges['P\u0001' + m.product] });
                 lastProduct = m.product;
                 lastProject = null;
             }
             if (hasProject && (m.project || m.product) && m.project !== lastProject) {
-                layoutRows.push({ type: 'group', level: hasProduct ? 1 : 0, label: m.project || '(No Project)', range: groupRanges['J\u0001' + m.product + '\u0001' + m.project] });
+                layoutRows.push({ type: 'group', level: hasProduct ? 1 : 0, label: m.project || 'Standalone', range: groupRanges['J\u0001' + m.product + '\u0001' + m.project] });
                 lastProject = m.project;
             }
             layoutRows.push({ type: 'code', level: (hasProduct ? 1 : 0) + (hasProject ? 1 : 0), label: m.label, code: code, activities: byCode[code], lanes: maxLanesPerCode[code] });
@@ -1276,8 +1311,11 @@
         var pxToPt = 0.75;
         var drawW = width * pxToPt * fitScale;
         var drawH = height * pxToPt * fitScale;
-        var TARGET_DPI = 150;
-        var MAX_CANVAS_DIM = 10000;
+        // Higher DPI + capped-but-generous max canvas size gives noticeably crisper text
+        // and bars in the exported PDF (the previous 150 DPI / 10000px cap produced a
+        // blurry, low-resolution image once downsampled from very wide charts).
+        var TARGET_DPI = 300;
+        var MAX_CANVAS_DIM = 14000;
         var canvasW = Math.round((drawW / 72) * TARGET_DPI);
         var canvasH = Math.round((drawH / 72) * TARGET_DPI);
         var overshoot = Math.max(canvasW / MAX_CANVAS_DIM, canvasH / MAX_CANVAS_DIM, 1);
@@ -1307,6 +1345,8 @@
                 canvas.height = canvasH;
                 var ctx = canvas.getContext('2d');
                 if (!ctx) throw new Error('Canvas 2D context unavailable.');
+                ctx.imageSmoothingEnabled = true;
+                if ('imageSmoothingQuality' in ctx) ctx.imageSmoothingQuality = 'high';
                 ctx.fillStyle = '#ffffff';
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
                 ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
