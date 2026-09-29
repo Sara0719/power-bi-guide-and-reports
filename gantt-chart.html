@@ -161,20 +161,23 @@
     <div class="panel">
         <h2>1. Upload Data</h2>
         <div class="upload-row">
-            <input type="file" id="fileInput" accept=".xlsx,.xls,.csv">
+            <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" multiple>
             <button id="loadSampleBtn" class="btn-secondary" type="button">Load Sample Data</button>
             <button id="loadSample2Btn" class="btn-secondary" type="button">Load Single-Column Sample</button>
         </div>
         <p class="hint">
             Just upload a file with an <strong>Activity</strong> (name) column and <strong>Start</strong> /
-            <strong>End</strong> date columns — no manual setup needed. Activities that share a software build
-            (auto-detected from the activity text, e.g. "SWB 1.0" or "Build 2.1", or from a dedicated Software Build
-            column if present) are automatically consolidated onto a single row, in sequence; activities without a
-            detected build share one general row. Rows where Start equals End are drawn as milestone diamonds, and
-            activities named <strong>FAT</strong>, <strong>SA</strong> or <strong>SAT</strong> are automatically
-            colored as gate reviews (green / yellow / gray) regardless of build. Optional
-            <strong>Predecessors</strong> / <strong>Successors</strong> columns (comma or semicolon separated
-            Activity IDs) draw dependency lines.
+            <strong>End</strong> date columns — no manual setup needed. You can select <strong>multiple files at
+            once</strong> (e.g. up to 5 CSVs, one per project) and they'll all be combined into a single chart. If a
+            file doesn't already have a <strong>Project</strong> column, every activity from that file is
+            automatically tagged with a Project name derived from its filename, so every activity always ends up
+            with a Project category. Activities that share a software build (auto-detected from the activity text,
+            e.g. "SWB 1.0" or "Build 2.1", or from a dedicated Software Build column if present) are automatically
+            consolidated onto a single row, in sequence, within their Project; activities without a detected build
+            share one general row. Rows where Start equals End are drawn as milestone diamonds, and activities named
+            <strong>FAT</strong>, <strong>SA</strong> or <strong>SAT</strong> are automatically colored as gate
+            reviews (green / yellow / gray) regardless of build. Optional <strong>Predecessors</strong> /
+            <strong>Successors</strong> columns (comma or semicolon separated Activity IDs) draw dependency lines.
         </p>
         <div id="status"></div>
     </div>
@@ -290,16 +293,16 @@
         return String(h || '').trim().toLowerCase();
     }
 
-    function guessColumn(target, exclude) {
+    function guessColumn(headers, target, exclude) {
         exclude = exclude || {};
-        for (var i = 0; i < state.headers.length; i++) {
-            var h = state.headers[i];
+        for (var i = 0; i < headers.length; i++) {
+            var h = headers[i];
             if (exclude[h]) continue;
             var norm = normalizeHeader(h);
             if (target.hints.indexOf(norm) !== -1) return h;
         }
-        for (var j = 0; j < state.headers.length; j++) {
-            var h2 = state.headers[j];
+        for (var j = 0; j < headers.length; j++) {
+            var h2 = headers[j];
             if (exclude[h2]) continue;
             var normJ = normalizeHeader(h2);
             for (var k = 0; k < target.hints.length; k++) {
@@ -309,20 +312,23 @@
         return '';
     }
 
-    // Silently auto-detects every column (no manual mapping UI shown to the user).
-    function autoMapColumns() {
-        state.mapping = {};
+    // Silently auto-detects every column (no manual mapping UI shown to the user)
+    // for a given file's header row. Returns a mapping object; does not mutate state,
+    // so it can be called once per uploaded file.
+    function autoMapColumns(headers) {
+        var mapping = {};
         var used = {};
         COLUMN_TARGETS.forEach(function (target) {
-            var col = guessColumn(target, used);
-            state.mapping[target.key] = col;
+            var col = guessColumn(headers, target, used);
+            mapping[target.key] = col;
             // Product/Project are allowed to both resolve to a single combined
             // "Project/Product" column (common in source templates) rather than
             // being excluded from each other's search.
             if (col && target.key !== 'product' && target.key !== 'project') used[col] = true;
         });
-        if (!state.mapping.product && state.mapping.project) state.mapping.product = state.mapping.project;
-        if (!state.mapping.project && state.mapping.product) state.mapping.project = state.mapping.product;
+        if (!mapping.product && mapping.project) mapping.product = mapping.project;
+        if (!mapping.project && mapping.product) mapping.project = mapping.product;
+        return mapping;
     }
 
     // Some exports (e.g. printed/PDF-derived Gantt sheets) have one or more title/banner
@@ -384,26 +390,96 @@
     // Excel merged cells (e.g. a Product/Project label spanning many activity rows) are
     // only stored on the first row of the merge; subsequent rows read back blank. Carry
     // the last non-blank value down so every activity in that block still resolves it.
-    function forwardFillColumn(key) {
-        var col = state.mapping[key];
+    function forwardFillColumn(rows, mapping, key) {
+        var col = mapping[key];
         if (!col) return;
         var last = '';
-        state.rawRows.forEach(function (row) {
+        rows.forEach(function (row) {
             var v = String(row[col] || '').trim();
             if (v) last = v; else row[col] = last;
         });
     }
 
+    // Derive a human-friendly Project label from a filename, used as a fallback so every
+    // activity always has a Project category even when its source file has no Project /
+    // Product column of its own (e.g. a plain Activity/Start/End sheet per project).
+    function projectNameFromFilename(filename) {
+        var base = String(filename || '').replace(/\.[^/.]+$/, '');
+        base = base.replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
+        return base || 'Project';
+    }
+
+    // Converts one file's rows (with that file's own headers/mapping) into rows keyed by
+    // fixed canonical field names, so rows from files with completely different header
+    // layouts can be safely merged into a single dataset before rendering. If the file has
+    // no Project/Product column, every row is tagged with the given fallback Project name.
+    function toCanonicalRows(rows, mapping, fallbackProject) {
+        return rows.map(function (row) {
+            var obj = {};
+            COLUMN_TARGETS.forEach(function (target) {
+                var col = mapping[target.key];
+                obj[target.key] = col ? row[col] : '';
+            });
+            if (!String(obj.project || '').trim() && !String(obj.product || '').trim() && fallbackProject) {
+                obj.project = fallbackProject;
+            }
+            return obj;
+        });
+    }
+
+    var CANONICAL_MAPPING = (function () {
+        var m = {};
+        COLUMN_TARGETS.forEach(function (t) { m[t.key] = t.key; });
+        return m;
+    })();
+
+    // Parses one workbook's rows into canonical rows ready for merging, handling its own
+    // header detection, column mapping, merged-cell forward-fill and Project fallback.
+    function harmonizeFileRows(rows, filename) {
+        if (!rows.length) return { rows: [], missing: [] };
+        var headers = Object.keys(rows[0]);
+        var mapping = autoMapColumns(headers);
+        forwardFillColumn(rows, mapping, 'product');
+        forwardFillColumn(rows, mapping, 'project');
+        var missing = COLUMN_TARGETS.filter(function (t) { return t.required && !mapping[t.key]; });
+        var fallbackProject = projectNameFromFilename(filename);
+        var canonical = toCanonicalRows(rows, mapping, fallbackProject);
+        return { rows: canonical, missing: missing, headers: headers };
+    }
+
     function loadRows(rows, sourceLabel) {
-        if (!rows.length) {
-            setStatus('The file appears to be empty.', 'error');
+        loadHarmonizedFiles([{ rows: rows, name: sourceLabel || 'data' }]);
+    }
+
+    // Accepts an array of { rows, name } — one entry per uploaded file (or sample
+    // dataset) — harmonizes each independently, merges them into one dataset, and
+    // renders the combined chart grouped by Product → Project → Build.
+    function loadHarmonizedFiles(files) {
+        var combined = [];
+        var missingByFile = [];
+        var totalRawRows = 0;
+        files.forEach(function (f) {
+            if (!f.rows.length) return;
+            totalRawRows += f.rows.length;
+            var result = harmonizeFileRows(f.rows, f.name);
+            if (result.missing.length) {
+                missingByFile.push(f.name + ': ' + result.missing.map(function (m) { return m.label; }).join(', '));
+            }
+            combined = combined.concat(result.rows);
+        });
+
+        if (!totalRawRows) {
+            setStatus('The file(s) appear to be empty.', 'error');
             return;
         }
-        state.rawRows = rows;
-        state.headers = Object.keys(rows[0]);
-        autoMapColumns();
-        forwardFillColumn('product');
-        forwardFillColumn('project');
+        if (!combined.length) {
+            setStatus('Could not find required column(s) in: ' + missingByFile.join(' | '), 'error');
+            return;
+        }
+
+        state.rawRows = combined;
+        state.headers = Object.keys(CANONICAL_MAPPING);
+        state.mapping = CANONICAL_MAPPING;
 
         var activities = processActivities();
         if (!activities) return;
@@ -413,36 +489,52 @@
         render(activities);
         renderLegend();
 
-        var prefix = sourceLabel ? sourceLabel + ' — ' : '';
-        setStatus(prefix + 'Rendered ' + activities.length + ' activities from ' + rows.length + ' row(s).', 'ok');
+        var fileCount = files.filter(function (f) { return f.rows.length; }).length;
+        var prefix = fileCount > 1 ? 'Loaded ' + fileCount + ' files — ' : (files[0] && files[0].name ? files[0].name + ' — ' : '');
+        var msg = prefix + 'Rendered ' + activities.length + ' activities from ' + totalRawRows + ' row(s).';
+        if (missingByFile.length) {
+            msg += ' (Some rows skipped — missing required column(s) in: ' + missingByFile.join(' | ') + ')';
+        }
+        setStatus(msg, missingByFile.length ? 'error' : 'ok');
+    }
+
+    function readFileAsWorkbookRows(file) {
+        return new Promise(function (resolve, reject) {
+            var reader = new FileReader();
+            reader.onload = function (evt) {
+                try {
+                    var data = evt.target.result;
+                    var workbook;
+                    if (/\.csv$/i.test(file.name)) {
+                        workbook = XLSX.read(data, { type: 'binary', raw: true });
+                    } else {
+                        workbook = XLSX.read(data, { type: 'binary' });
+                    }
+                    resolve({ rows: parseWorkbookRows(workbook), name: file.name });
+                } catch (err) {
+                    reject(err);
+                }
+            };
+            reader.onerror = function () {
+                reject(new Error('Failed to read file "' + file.name + '".'));
+            };
+            reader.readAsBinaryString(file);
+        });
     }
 
     fileInput.addEventListener('change', function (e) {
-        var file = e.target.files[0];
-        if (!file) return;
-        setStatus('Reading "' + file.name + '"...');
+        var files = Array.prototype.slice.call(e.target.files || []);
+        if (!files.length) return;
+        setStatus('Reading ' + files.length + ' file' + (files.length > 1 ? 's' : '') + '...');
 
-        var reader = new FileReader();
-        reader.onload = function (evt) {
-            try {
-                var data = evt.target.result;
-                var workbook;
-                if (/\.csv$/i.test(file.name)) {
-                    workbook = XLSX.read(data, { type: 'binary', raw: true });
-                } else {
-                    workbook = XLSX.read(data, { type: 'binary' });
-                }
-                var rows = parseWorkbookRows(workbook);
-                loadRows(rows, 'Loaded "' + file.name + '"');
-            } catch (err) {
+        Promise.all(files.map(readFileAsWorkbookRows))
+            .then(function (results) {
+                loadHarmonizedFiles(results);
+            })
+            .catch(function (err) {
                 console.error(err);
                 setStatus('Failed to parse file: ' + err.message, 'error');
-            }
-        };
-        reader.onerror = function () {
-            setStatus('Failed to read file.', 'error');
-        };
-        reader.readAsBinaryString(file);
+            });
     });
 
     function sampleCSV() {
@@ -1168,51 +1260,83 @@
 
     pdfBtn.addEventListener('click', function () {
         if (!state.activities.length) return;
-        var renderScale = 2;
         var width = parseInt(svg.getAttribute('width'), 10) || 100;
         var height = parseInt(svg.getAttribute('height'), 10) || 100;
         var page = getPageSizePt();
         var fitScale = computeFitScale(width, height, page.w, page.h);
+
+        // The chart's native SVG can be extremely wide for multi-year, many-build
+        // schedules (tens of thousands of pixels), which silently fails to rasterize
+        // on a <canvas> once past the browser's canvas size limit (this was the root
+        // cause of "unable to download the file"). Instead of rasterizing at the raw
+        // chart resolution, size the canvas to the chart's FINAL on-page dimensions at
+        // a fixed target DPI — the browser downsamples the SVG image directly to that
+        // size, so canvas dimensions stay small and bounded no matter how wide the
+        // underlying data is.
+        var pxToPt = 0.75;
+        var drawW = width * pxToPt * fitScale;
+        var drawH = height * pxToPt * fitScale;
+        var TARGET_DPI = 150;
+        var MAX_CANVAS_DIM = 10000;
+        var canvasW = Math.round((drawW / 72) * TARGET_DPI);
+        var canvasH = Math.round((drawH / 72) * TARGET_DPI);
+        var overshoot = Math.max(canvasW / MAX_CANVAS_DIM, canvasH / MAX_CANVAS_DIM, 1);
+        canvasW = Math.max(1, Math.round(canvasW / overshoot));
+        canvasH = Math.max(1, Math.round(canvasH / overshoot));
+
+        pdfBtn.disabled = true;
+        var originalLabel = pdfBtn.textContent;
+        pdfBtn.textContent = 'Generating PDF…';
+        setStatus('Generating PDF…');
+
         var svgString = buildExportSvgString();
         var svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
         var url = URL.createObjectURL(svgBlob);
         var img = new Image();
-        img.onload = function () {
-            var canvas = document.createElement('canvas');
-            canvas.width = width * renderScale;
-            canvas.height = height * renderScale;
-            var ctx = canvas.getContext('2d');
-            ctx.fillStyle = '#ffffff';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-            URL.revokeObjectURL(url);
 
-            var imgData = canvas.toDataURL('image/png');
-            var jsPDFCtor = window.jspdf && window.jspdf.jsPDF;
-            if (!jsPDFCtor) {
-                setStatus('PDF export library failed to load.', 'error');
-                return;
+        function cleanup() {
+            URL.revokeObjectURL(url);
+            pdfBtn.disabled = false;
+            pdfBtn.textContent = originalLabel;
+        }
+
+        img.onload = function () {
+            try {
+                var canvas = document.createElement('canvas');
+                canvas.width = canvasW;
+                canvas.height = canvasH;
+                var ctx = canvas.getContext('2d');
+                if (!ctx) throw new Error('Canvas 2D context unavailable.');
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+                var imgData = canvas.toDataURL('image/png');
+                var jsPDFCtor = window.jspdf && window.jspdf.jsPDF;
+                if (!jsPDFCtor) {
+                    throw new Error('PDF export library (jsPDF) failed to load — check your internet connection.');
+                }
+                var orientation = page.w >= page.h ? 'landscape' : 'portrait';
+                var pdf = new jsPDFCtor({
+                    orientation: orientation,
+                    unit: 'pt',
+                    format: [page.w, page.h]
+                });
+                var offsetX = (page.w - drawW) / 2;
+                var offsetY = (page.h - drawH) / 2;
+                pdf.addImage(imgData, 'PNG', offsetX, offsetY, drawW, drawH);
+                pdf.save('gantt-chart.pdf');
+                setStatus('PDF downloaded.', 'ok');
+            } catch (err) {
+                console.error(err);
+                setStatus('Failed to export PDF: ' + err.message, 'error');
+            } finally {
+                cleanup();
             }
-            // Fit the whole chart onto a single page of the selected size, scaling it
-            // (and the row-label/date columns with it) down uniformly so nothing is
-            // cut off across multiple sheets.
-            var pxToPt = 0.75;
-            var drawW = width * pxToPt * fitScale;
-            var drawH = height * pxToPt * fitScale;
-            var orientation = page.w >= page.h ? 'landscape' : 'portrait';
-            var pdf = new jsPDFCtor({
-                orientation: orientation,
-                unit: 'pt',
-                format: [page.w, page.h]
-            });
-            var offsetX = (page.w - drawW) / 2;
-            var offsetY = (page.h - drawH) / 2;
-            pdf.addImage(imgData, 'PNG', offsetX, offsetY, drawW, drawH);
-            pdf.save('gantt-chart.pdf');
         };
         img.onerror = function () {
-            URL.revokeObjectURL(url);
-            setStatus('Failed to export PDF.', 'error');
+            cleanup();
+            setStatus('Failed to export PDF: the chart image could not be rendered.', 'error');
         };
         img.src = url;
     });
