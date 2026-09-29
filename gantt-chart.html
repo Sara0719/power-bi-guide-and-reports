@@ -112,6 +112,7 @@
     svg { display:block; font-family: inherit; }
 
     .row-label { font-size: 12px; fill: var(--text-dark); }
+    .group-row-label { font-size: 12px; font-weight: 700; fill: var(--text-dark); }
     .grid-line { stroke: #eee; stroke-width: 1; }
     .month-line { stroke:#ccc; stroke-width:1; }
     .axis-text { font-size: 11px; fill: var(--text-light); }
@@ -216,6 +217,8 @@
     'use strict';
 
     var COLUMN_TARGETS = [
+        { key: 'product',     label: 'Product',         required: false, hints: ['product','project/product','product line'] },
+        { key: 'project',     label: 'Project',         required: false, hints: ['project','project name','project/product'] },
         { key: 'code',        label: 'Activity Code',   required: false, hints: ['activity code','task code','code','sequence code','row code'] },
         { key: 'build',       label: 'Software Build',  required: false, hints: ['build','software build','release','version'] },
         { key: 'name',        label: 'Activity Name',   required: true,  hints: ['activity name','task name','name','activity','task','description'] },
@@ -287,15 +290,20 @@
         return String(h || '').trim().toLowerCase();
     }
 
-    function guessColumn(target) {
+    function guessColumn(target, exclude) {
+        exclude = exclude || {};
         for (var i = 0; i < state.headers.length; i++) {
-            var norm = normalizeHeader(state.headers[i]);
-            if (target.hints.indexOf(norm) !== -1) return state.headers[i];
+            var h = state.headers[i];
+            if (exclude[h]) continue;
+            var norm = normalizeHeader(h);
+            if (target.hints.indexOf(norm) !== -1) return h;
         }
         for (var j = 0; j < state.headers.length; j++) {
-            var normJ = normalizeHeader(state.headers[j]);
+            var h2 = state.headers[j];
+            if (exclude[h2]) continue;
+            var normJ = normalizeHeader(h2);
             for (var k = 0; k < target.hints.length; k++) {
-                if (normJ.indexOf(target.hints[k]) !== -1) return state.headers[j];
+                if (normJ.indexOf(target.hints[k]) !== -1) return h2;
             }
         }
         return '';
@@ -304,16 +312,86 @@
     // Silently auto-detects every column (no manual mapping UI shown to the user).
     function autoMapColumns() {
         state.mapping = {};
+        var used = {};
         COLUMN_TARGETS.forEach(function (target) {
-            state.mapping[target.key] = guessColumn(target);
+            var col = guessColumn(target, used);
+            state.mapping[target.key] = col;
+            // Product/Project are allowed to both resolve to a single combined
+            // "Project/Product" column (common in source templates) rather than
+            // being excluded from each other's search.
+            if (col && target.key !== 'product' && target.key !== 'project') used[col] = true;
         });
+        if (!state.mapping.product && state.mapping.project) state.mapping.product = state.mapping.project;
+        if (!state.mapping.project && state.mapping.product) state.mapping.project = state.mapping.product;
+    }
+
+    // Some exports (e.g. printed/PDF-derived Gantt sheets) have one or more title/banner
+    // rows above the real header row. Scan the first several rows and pick the one whose
+    // cells best match our expected column hints, instead of always assuming row 1.
+    function findHeaderRowIndex(matrix) {
+        var allHints = [];
+        COLUMN_TARGETS.forEach(function (t) { allHints = allHints.concat(t.hints); });
+        var scanRows = Math.min(matrix.length, 20);
+        var bestIdx = 0, bestScore = 0;
+        for (var r = 0; r < scanRows; r++) {
+            var row = matrix[r] || [];
+            var nonEmpty = row.filter(function (c) { return String(c || '').trim() !== ''; }).length;
+            if (nonEmpty < 2) continue;
+            var score = 0;
+            row.forEach(function (cell) {
+                var norm = normalizeHeader(cell);
+                if (!norm) return;
+                for (var k = 0; k < allHints.length; k++) {
+                    if (norm === allHints[k] || norm.indexOf(allHints[k]) !== -1) { score++; break; }
+                }
+            });
+            if (score > bestScore) { bestScore = score; bestIdx = r; }
+        }
+        return bestIdx;
     }
 
     function parseWorkbookRows(workbook) {
         var sheetName = workbook.SheetNames[0];
         var sheet = workbook.Sheets[sheetName];
-        var rows = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: true });
+        var matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: true, blankrows: false });
+        if (!matrix.length) return [];
+
+        var headerIdx = findHeaderRowIndex(matrix);
+        var headerRow = matrix[headerIdx] || [];
+        var seen = {};
+        var headers = headerRow.map(function (h, i) {
+            var text = String(h || '').trim();
+            if (!text) text = 'Column' + (i + 1);
+            if (seen[text]) { seen[text]++; text = text + ' (' + seen[text] + ')'; } else { seen[text] = 1; }
+            return text;
+        });
+
+        var rows = [];
+        for (var r = headerIdx + 1; r < matrix.length; r++) {
+            var arr = matrix[r] || [];
+            var obj = {};
+            var hasValue = false;
+            for (var c = 0; c < headers.length; c++) {
+                var val = arr[c] !== undefined ? arr[c] : '';
+                obj[headers[c]] = val;
+                if (String(val).trim() !== '') hasValue = true;
+            }
+            if (hasValue) rows.push(obj);
+        }
         return rows;
+    }
+
+    // Excel merged cells (e.g. a Product/Project label spanning many activity rows) are
+    // only stored on the first row of the merge; subsequent rows read back blank. Carry
+    // the last non-blank value down so every activity in that block still resolves it.
+    function forwardFillColumn(key) {
+        var col = state.mapping[key];
+        if (!col) return;
+        var last = '';
+        state.rawRows.forEach(function (row) {
+            var v = String(row[col] || '').trim();
+            if (v) last = v; else row[col] = last;
+        });
     }
 
     function loadRows(rows, sourceLabel) {
@@ -324,6 +402,8 @@
         state.rawRows = rows;
         state.headers = Object.keys(rows[0]);
         autoMapColumns();
+        forwardFillColumn('product');
+        forwardFillColumn('project');
 
         var activities = processActivities();
         if (!activities) return;
@@ -492,7 +572,10 @@
         var map = state.mapping;
         var missing = COLUMN_TARGETS.filter(function (t) { return t.required && !map[t.key]; });
         if (missing.length) {
-            setStatus('Please map required columns: ' + missing.map(function (m) { return m.label; }).join(', '), 'error');
+            setStatus('Could not find required column(s): ' + missing.map(function (m) { return m.label; }).join(', ') +
+                '. Detected column headers in the file: "' + state.headers.join('", "') + '". ' +
+                'Rename the relevant column to include a recognizable word (e.g. "Activity", "Start", "End") or make sure the ' +
+                'header row (not a title/banner row) is the first row of data.', 'error');
             return null;
         }
 
@@ -504,6 +587,12 @@
             var name = String(row[map.name] || '').trim();
             var id = map.id && row[map.id] !== '' ? String(row[map.id]).trim() : ('row' + idx);
 
+            var product = map.product ? String(row[map.product] || '').trim() : '';
+            var project = map.project ? String(row[map.project] || '').trim() : '';
+            // When Product and Project both resolved to the same combined column (e.g. a
+            // single "Project/Product" header), avoid a duplicate grouping level.
+            if (map.product && map.project && map.product === map.project) project = '';
+
             // Software Build is optional: when no column is mapped (or the cell is blank),
             // try to pull an embedded label such as "SWB 1.0" or "Build 2.1" out of the name.
             var build = map.build ? String(row[map.build] || '').trim() : '';
@@ -513,14 +602,18 @@
             // activity belonging to the same software build onto a single timeline row
             // (matching a Power BI-style rollup); activities with no detected build share
             // one general row instead of each getting a row of its own.
-            var code = map.code ? String(row[map.code] || '').trim() : '';
-            if (!code) code = build || 'General';
+            var codeLabel = map.code ? String(row[map.code] || '').trim() : '';
+            if (!codeLabel) codeLabel = build || 'General';
             if (!build) build = 'Unassigned';
+
+            // Namespace the row-grouping key by Product/Project so that, e.g., two
+            // different projects that both have a "SWB 1.0" build still get their own rows.
+            var code = (product || project) ? (product + '\u0001' + project + '\u0001' + codeLabel) : codeLabel;
 
             var start = parseDate(row[map.start]);
             var end = parseDate(row[map.end]);
 
-            if (!code || !start || !end) {
+            if (!codeLabel || !start || !end) {
                 skipped++;
                 return;
             }
@@ -532,6 +625,9 @@
             activities.push({
                 id: id,
                 code: code,
+                codeLabel: codeLabel,
+                product: product,
+                project: project,
                 build: build,
                 name: name || id,
                 start: startOfDay(start),
@@ -589,17 +685,77 @@
     };
 
     function render(activities) {
-        // group by code
+        var hasProduct = activities.some(function (a) { return a.product; });
+        var hasProject = activities.some(function (a) { return a.project; });
+
+        // group by (namespaced) code — one row per software build / activity group
         var byCode = {};
         activities.forEach(function (a) {
             if (!byCode[a.code]) byCode[a.code] = [];
             byCode[a.code].push(a);
         });
-        var codes = Object.keys(byCode).sort();
+
+        var codeMeta = {};
+        Object.keys(byCode).forEach(function (code) {
+            var acts = byCode[code];
+            var minStart = null, maxEnd = null;
+            acts.forEach(function (a) {
+                if (!minStart || a.start < minStart) minStart = a.start;
+                if (!maxEnd || a.end > maxEnd) maxEnd = a.end;
+            });
+            codeMeta[code] = {
+                product: acts[0].product || '',
+                project: acts[0].project || '',
+                label: acts[0].codeLabel || code,
+                minStart: minStart,
+                maxEnd: maxEnd
+            };
+        });
+
+        var codes = Object.keys(byCode).sort(function (a, b) {
+            var ma = codeMeta[a], mb = codeMeta[b];
+            if (ma.product !== mb.product) return ma.product.localeCompare(mb.product);
+            if (ma.project !== mb.project) return ma.project.localeCompare(mb.project);
+            return ma.label.localeCompare(mb.label);
+        });
 
         var maxLanesPerCode = {};
         codes.forEach(function (code) {
             maxLanesPerCode[code] = assignLanes(byCode[code]);
+        });
+
+        // Build product/project group ranges (min/max dates) for the summary banner bars.
+        var groupRanges = {};
+        codes.forEach(function (code) {
+            var m = codeMeta[code];
+            [
+                hasProduct && m.product ? 'P\u0001' + m.product : null,
+                hasProject && (m.product || m.project) ? 'J\u0001' + m.product + '\u0001' + m.project : null
+            ].forEach(function (gk) {
+                if (!gk) return;
+                if (!groupRanges[gk]) groupRanges[gk] = { minStart: m.minStart, maxEnd: m.maxEnd };
+                else {
+                    if (m.minStart < groupRanges[gk].minStart) groupRanges[gk].minStart = m.minStart;
+                    if (m.maxEnd > groupRanges[gk].maxEnd) groupRanges[gk].maxEnd = m.maxEnd;
+                }
+            });
+        });
+
+        // Flatten into an ordered list of rows to draw: Product header > Project header > Build rows.
+        var layoutRows = [];
+        var lastProduct = null, lastProject = null;
+        codes.forEach(function (code) {
+            var m = codeMeta[code];
+            if (hasProduct && m.product !== lastProduct) {
+                layoutRows.push({ type: 'group', level: 0, label: m.product || '(No Product)', range: groupRanges['P\u0001' + m.product] });
+                lastProduct = m.product;
+                lastProject = null;
+            }
+            if (hasProject && (m.project || m.product) && m.project !== lastProject) {
+                layoutRows.push({ type: 'group', level: hasProduct ? 1 : 0, label: m.project || '(No Project)', range: groupRanges['J\u0001' + m.product + '\u0001' + m.project] });
+                lastProject = m.project;
+            }
+            layoutRows.push({ type: 'code', level: (hasProduct ? 1 : 0) + (hasProject ? 1 : 0), label: m.label, code: code, activities: byCode[code], lanes: maxLanesPerCode[code] });
         });
 
         var minDate = null, maxDate = null;
@@ -616,14 +772,16 @@
             return LAYOUT.marginLeft + days * LAYOUT.dayWidth;
         };
 
-        var rowTops = {};
+        var GROUP_ROW_HEIGHT = 26;
         var y = LAYOUT.marginTop;
-        codes.forEach(function (code) {
-            rowTops[code] = y;
-            var lanes = maxLanesPerCode[code];
-            var rowH = LAYOUT.rowHeight + (lanes - 1) * LAYOUT.laneOffset;
-            rowTops[code + '__height'] = rowH;
-            y += rowH;
+        layoutRows.forEach(function (row) {
+            row.top = y;
+            if (row.type === 'group') {
+                row.height = GROUP_ROW_HEIGHT;
+            } else {
+                row.height = LAYOUT.rowHeight + (row.lanes - 1) * LAYOUT.laneOffset;
+            }
+            y += row.height;
         });
 
         var chartWidth = LAYOUT.marginLeft + totalDays * LAYOUT.dayWidth + LAYOUT.marginRight;
@@ -661,32 +819,71 @@
             cursor.setMonth(cursor.getMonth() + 1);
         }
 
-        // row backgrounds + labels
-        codes.forEach(function (code, i) {
-            var top = rowTops[code];
-            var h = rowTops[code + '__height'];
-            if (i % 2 === 0) {
-                var rect = document.createElementNS(ns, 'rect');
-                rect.setAttribute('x', 0);
-                rect.setAttribute('y', top - 4);
-                rect.setAttribute('width', chartWidth);
-                rect.setAttribute('height', h);
-                rect.setAttribute('fill', '#f7f9fc');
-                svg.appendChild(rect);
+        // row backgrounds + labels (including Product/Project group header banners)
+        layoutRows.forEach(function (row, i) {
+            var top = row.top;
+            var h = row.height;
+            var indent = 10 + row.level * 14;
+
+            if (row.type === 'group') {
+                var band = document.createElementNS(ns, 'rect');
+                band.setAttribute('x', 0);
+                band.setAttribute('y', top - 4);
+                band.setAttribute('width', chartWidth);
+                band.setAttribute('height', h);
+                band.setAttribute('fill', row.level === 0 ? '#e9ecf5' : '#f1f3fa');
+                svg.appendChild(band);
+
+                var glabel = document.createElementNS(ns, 'text');
+                glabel.setAttribute('x', indent);
+                glabel.setAttribute('y', top + h / 2 - 4);
+                glabel.setAttribute('class', 'group-row-label');
+                glabel.setAttribute('dominant-baseline', 'middle');
+                var maxGroupChars = 22 - row.level * 3;
+                glabel.textContent = row.label.length > maxGroupChars ? row.label.slice(0, maxGroupChars - 1) + '…' : row.label;
+                if (row.label.length > maxGroupChars) {
+                    var gtitle = document.createElementNS(ns, 'title');
+                    gtitle.textContent = row.label;
+                    glabel.appendChild(gtitle);
+                }
+                svg.appendChild(glabel);
+
+                if (row.range && row.range.minStart && row.range.maxEnd) {
+                    var gx1 = xForDate(row.range.minStart);
+                    var gx2 = xForDate(addDays(row.range.maxEnd, 1));
+                    var gbar = document.createElementNS(ns, 'rect');
+                    gbar.setAttribute('x', gx1);
+                    gbar.setAttribute('y', top + h / 2 - 5);
+                    gbar.setAttribute('width', Math.max(2, gx2 - gx1));
+                    gbar.setAttribute('height', 10);
+                    gbar.setAttribute('rx', 4);
+                    gbar.setAttribute('fill', row.level === 0 ? '#c96a63' : '#d98a86');
+                    svg.appendChild(gbar);
+                }
+            } else {
+                if (i % 2 === 0) {
+                    var rect = document.createElementNS(ns, 'rect');
+                    rect.setAttribute('x', 0);
+                    rect.setAttribute('y', top - 4);
+                    rect.setAttribute('width', chartWidth);
+                    rect.setAttribute('height', h);
+                    rect.setAttribute('fill', '#f7f9fc');
+                    svg.appendChild(rect);
+                }
+                var label = document.createElementNS(ns, 'text');
+                label.setAttribute('x', indent);
+                label.setAttribute('y', top + h / 2);
+                label.setAttribute('class', 'row-label');
+                label.setAttribute('dominant-baseline', 'middle');
+                var maxChars = 22 - row.level * 3;
+                label.textContent = row.label.length > maxChars ? row.label.slice(0, maxChars - 1) + '…' : row.label;
+                if (row.label.length > maxChars) {
+                    var titleEl = document.createElementNS(ns, 'title');
+                    titleEl.textContent = row.label;
+                    label.appendChild(titleEl);
+                }
+                svg.appendChild(label);
             }
-            var label = document.createElementNS(ns, 'text');
-            label.setAttribute('x', 10);
-            label.setAttribute('y', top + h / 2);
-            label.setAttribute('class', 'row-label');
-            label.setAttribute('dominant-baseline', 'middle');
-            var maxChars = 22;
-            label.textContent = code.length > maxChars ? code.slice(0, maxChars - 1) + '…' : code;
-            if (code.length > maxChars) {
-                var titleEl = document.createElementNS(ns, 'title');
-                titleEl.textContent = code;
-                label.appendChild(titleEl);
-            }
-            svg.appendChild(label);
 
             var sep = document.createElementNS(ns, 'line');
             sep.setAttribute('x1', 0); sep.setAttribute('x2', chartWidth);
@@ -699,9 +896,10 @@
         var barLookup = {};
         var MILESTONE_SIZE = 9;
 
-        codes.forEach(function (code) {
-            var top = rowTops[code];
-            byCode[code].forEach(function (act) {
+        layoutRows.forEach(function (row) {
+            if (row.type !== 'code') return;
+            var top = row.top;
+            row.activities.forEach(function (act) {
                 var x1 = xForDate(act.start);
                 var x2 = xForDate(addDays(act.end, 1));
                 var w = Math.max(2, x2 - x1);
@@ -792,7 +990,9 @@
                     tooltip.style.left = (evt.clientX + 14) + 'px';
                     tooltip.style.top = (evt.clientY + 14) + 'px';
                     tooltip.innerHTML = '<strong>' + act.name + '</strong><br>' +
-                        'Code: ' + act.code + '<br>' +
+                        (act.product ? 'Product: ' + act.product + '<br>' : '') +
+                        (act.project ? 'Project: ' + act.project + '<br>' : '') +
+                        'Row: ' + act.codeLabel + '<br>' +
                         'Build: ' + act.build + '<br>' +
                         (act.isMilestone ? act.start.toLocaleDateString() : (act.start.toLocaleDateString() + ' → ' + act.end.toLocaleDateString())) +
                         (act.predecessors.length ? '<br>Predecessors: ' + act.predecessors.join(', ') : '');
