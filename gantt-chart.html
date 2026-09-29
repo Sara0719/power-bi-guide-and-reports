@@ -183,6 +183,19 @@
         <div class="toolbar no-print">
             <label><input type="checkbox" id="showDepsChk" checked> Show dependency lines</label>
             <label><input type="checkbox" id="showOverlapChk" checked> Highlight overlapping activities</label>
+            <label>Fit to page size
+                <select id="pageSizeSel">
+                    <option value="A4">A4</option>
+                    <option value="A3" selected>A3</option>
+                    <option value="A2">A2</option>
+                    <option value="A1">A1</option>
+                    <option value="A0">A0</option>
+                    <option value="Letter">Letter</option>
+                    <option value="Tabloid">Tabloid</option>
+                    <option value="ArchD">Arch D (plotter)</option>
+                    <option value="ArchE">Arch E (plotter)</option>
+                </select>
+            </label>
             <button id="printBtn" class="btn-secondary" type="button">🖨️ Print</button>
             <button id="pdfBtn" class="btn-secondary" type="button">📄 Download PDF</button>
         </div>
@@ -263,6 +276,7 @@
     var showOverlapChk = document.getElementById('showOverlapChk');
     var printBtn = document.getElementById('printBtn');
     var pdfBtn = document.getElementById('pdfBtn');
+    var pageSizeSel = document.getElementById('pageSizeSel');
 
     function setStatus(msg, type) {
         statusEl.textContent = msg;
@@ -564,7 +578,7 @@
     }
 
     var LAYOUT = {
-        marginLeft: 220,
+        marginLeft: 150,
         marginTop: 50,
         marginBottom: 30,
         marginRight: 40,
@@ -665,7 +679,7 @@
             label.setAttribute('y', top + h / 2);
             label.setAttribute('class', 'row-label');
             label.setAttribute('dominant-baseline', 'middle');
-            var maxChars = 34;
+            var maxChars = 22;
             label.textContent = code.length > maxChars ? code.slice(0, maxChars - 1) + '…' : code;
             if (code.length > maxChars) {
                 var titleEl = document.createElementNS(ns, 'title');
@@ -868,9 +882,63 @@
         if (state.activities.length) render(state.activities);
     });
 
+    // Standard paper/plotter sizes in points (1pt = 1/72in), landscape (width > height).
+    var PAGE_SIZES = {
+        A4: [842, 595],
+        A3: [1191, 842],
+        A2: [1684, 1191],
+        A1: [2384, 1684],
+        A0: [3370, 2384],
+        Letter: [792, 612],
+        Tabloid: [1224, 792],
+        ArchD: [2592, 1728],
+        ArchE: [3456, 2592]
+    };
+
+    function getPageSizePt() {
+        var dims = PAGE_SIZES[pageSizeSel.value] || PAGE_SIZES.A3;
+        return { w: dims[0], h: dims[1] };
+    }
+
+    // Computes the uniform scale factor needed to shrink a chart of chartW x chartH
+    // pixels down to fit entirely within a single page of pageW x pageH points
+    // (assuming 96 CSS px = 72pt, i.e. 1px = 0.75pt), leaving a small margin.
+    function computeFitScale(chartW, chartH, pageW, pageH) {
+        var pxToPt = 0.75;
+        var marginPt = 18;
+        var availW = pageW - marginPt * 2;
+        var availH = pageH - marginPt * 2;
+        var scale = Math.min(availW / (chartW * pxToPt), availH / (chartH * pxToPt));
+        return Math.min(1, scale);
+    }
+
+    var printStyleTag = null;
+
+    function applyPrintScale() {
+        var width = parseInt(svg.getAttribute('width'), 10) || 100;
+        var height = parseInt(svg.getAttribute('height'), 10) || 100;
+        var page = getPageSizePt();
+        var scale = computeFitScale(width, height, page.w, page.h);
+        printStyleTag = document.createElement('style');
+        printStyleTag.textContent = '@media print {' +
+            '@page { size: ' + (page.w >= page.h ? 'landscape' : 'portrait') + '; margin: 10mm; }' +
+            '#chart-scroll { transform: scale(' + scale + '); transform-origin: top left; }' +
+            '}';
+        document.head.appendChild(printStyleTag);
+    }
+
+    function clearPrintScale() {
+        if (printStyleTag && printStyleTag.parentNode) {
+            printStyleTag.parentNode.removeChild(printStyleTag);
+        }
+        printStyleTag = null;
+    }
+
     printBtn.addEventListener('click', function () {
+        applyPrintScale();
         window.print();
     });
+    window.addEventListener('afterprint', clearPrintScale);
 
     // CSS classes used inside the SVG (bar/milestone/dep-line/etc.) live in the page's
     // main <style> block, so they must be inlined into the SVG's own <defs> before it is
@@ -900,17 +968,19 @@
 
     pdfBtn.addEventListener('click', function () {
         if (!state.activities.length) return;
-        var scale = 2;
+        var renderScale = 2;
         var width = parseInt(svg.getAttribute('width'), 10) || 100;
         var height = parseInt(svg.getAttribute('height'), 10) || 100;
+        var page = getPageSizePt();
+        var fitScale = computeFitScale(width, height, page.w, page.h);
         var svgString = buildExportSvgString();
         var svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
         var url = URL.createObjectURL(svgBlob);
         var img = new Image();
         img.onload = function () {
             var canvas = document.createElement('canvas');
-            canvas.width = width * scale;
-            canvas.height = height * scale;
+            canvas.width = width * renderScale;
+            canvas.height = height * renderScale;
             var ctx = canvas.getContext('2d');
             ctx.fillStyle = '#ffffff';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -923,13 +993,21 @@
                 setStatus('PDF export library failed to load.', 'error');
                 return;
             }
-            var orientation = width >= height ? 'landscape' : 'portrait';
+            // Fit the whole chart onto a single page of the selected size, scaling it
+            // (and the row-label/date columns with it) down uniformly so nothing is
+            // cut off across multiple sheets.
+            var pxToPt = 0.75;
+            var drawW = width * pxToPt * fitScale;
+            var drawH = height * pxToPt * fitScale;
+            var orientation = page.w >= page.h ? 'landscape' : 'portrait';
             var pdf = new jsPDFCtor({
                 orientation: orientation,
                 unit: 'pt',
-                format: [width, height]
+                format: [page.w, page.h]
             });
-            pdf.addImage(imgData, 'PNG', 0, 0, width, height);
+            var offsetX = (page.w - drawW) / 2;
+            var offsetY = (page.h - drawH) / 2;
+            pdf.addImage(imgData, 'PNG', offsetX, offsetY, drawW, drawH);
             pdf.save('gantt-chart.pdf');
         };
         img.onerror = function () {
