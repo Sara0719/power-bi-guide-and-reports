@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Software Build Gantt Chart</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -138,6 +139,14 @@
 
     .hint { font-size:.82em; color:#888; margin-top:8px; }
     code { background:#f3f3f3; padding:1px 5px; border-radius:4px; }
+
+    @media print {
+        body { background: #fff; padding: 0; }
+        .wrap { max-width: none; }
+        header, .panel:not(#chart-panel), .no-print, #tooltip { display: none !important; }
+        #chart-panel { box-shadow: none; border: none; padding: 0; margin: 0; }
+        #chart-scroll { overflow: visible !important; border: none; }
+    }
 </style>
 </head>
 <body>
@@ -156,36 +165,32 @@
             <button id="loadSample2Btn" class="btn-secondary" type="button">Load Single-Column Sample</button>
         </div>
         <p class="hint">
-            Expected data: one row per activity with columns for an <strong>Activity Code</strong> (activities sharing
-            a code render on the same row, in date sequence), the <strong>Software Build</strong> the activity belongs to,
-            an <strong>Activity Name</strong>, <strong>Start</strong> / <strong>End</strong> dates, and optional
-            <strong>Predecessors</strong> / <strong>Successors</strong> (comma or semicolon separated Activity IDs) used
-            to draw dependency lines. Rows where Start equals End are drawn as milestone diamonds, and activities named
-            <strong>FAT</strong>, <strong>SA</strong> or <strong>SAT</strong> are automatically colored as gate reviews
-            (green / yellow / gray) regardless of build.
+            Just upload a file with an <strong>Activity</strong> (name) column and <strong>Start</strong> /
+            <strong>End</strong> date columns — no manual setup needed. Activities that share a software build
+            (auto-detected from the activity text, e.g. "SWB 1.0" or "Build 2.1", or from a dedicated Software Build
+            column if present) are automatically consolidated onto a single row, in sequence; activities without a
+            detected build share one general row. Rows where Start equals End are drawn as milestone diamonds, and
+            activities named <strong>FAT</strong>, <strong>SA</strong> or <strong>SAT</strong> are automatically
+            colored as gate reviews (green / yellow / gray) regardless of build. Optional
+            <strong>Predecessors</strong> / <strong>Successors</strong> columns (comma or semicolon separated
+            Activity IDs) draw dependency lines.
         </p>
         <div id="status"></div>
     </div>
 
-    <div class="panel" id="mappingPanel" style="display:none;">
-        <h2>2. Map Columns</h2>
-        <div class="mapping-grid" id="mappingGrid"></div>
-        <div class="toolbar">
-            <button id="renderBtn" type="button">Generate Gantt Chart</button>
-        </div>
-    </div>
-
     <div class="panel" id="chart-panel" style="display:none;">
-        <h2>3. Gantt Chart</h2>
-        <div class="toolbar">
+        <h2>2. Gantt Chart</h2>
+        <div class="toolbar no-print">
             <label><input type="checkbox" id="showDepsChk" checked> Show dependency lines</label>
             <label><input type="checkbox" id="showOverlapChk" checked> Highlight overlapping activities</label>
+            <button id="printBtn" class="btn-secondary" type="button">🖨️ Print</button>
+            <button id="pdfBtn" class="btn-secondary" type="button">📄 Download PDF</button>
         </div>
         <div id="legend"></div>
         <div id="chart-scroll" style="margin-top:16px;">
             <div id="chart-empty" class="empty-state">
                 <i>📁</i>
-                No data yet — upload a file and click "Generate Gantt Chart".
+                No data yet — upload a file to generate the chart.
             </div>
             <svg id="chart" width="100" height="100"></svg>
         </div>
@@ -249,9 +254,6 @@
     var fileInput = document.getElementById('fileInput');
     var loadSampleBtn = document.getElementById('loadSampleBtn');
     var statusEl = document.getElementById('status');
-    var mappingPanel = document.getElementById('mappingPanel');
-    var mappingGrid = document.getElementById('mappingGrid');
-    var renderBtn = document.getElementById('renderBtn');
     var chartPanel = document.getElementById('chart-panel');
     var chartEmpty = document.getElementById('chart-empty');
     var svg = document.getElementById('chart');
@@ -259,6 +261,8 @@
     var tooltip = document.getElementById('tooltip');
     var showDepsChk = document.getElementById('showDepsChk');
     var showOverlapChk = document.getElementById('showOverlapChk');
+    var printBtn = document.getElementById('printBtn');
+    var pdfBtn = document.getElementById('pdfBtn');
 
     function setStatus(msg, type) {
         statusEl.textContent = msg;
@@ -283,52 +287,12 @@
         return '';
     }
 
-    function buildMappingUI() {
-        mappingGrid.innerHTML = '';
+    // Silently auto-detects every column (no manual mapping UI shown to the user).
+    function autoMapColumns() {
         state.mapping = {};
         COLUMN_TARGETS.forEach(function (target) {
-            var guess = guessColumn(target);
-            state.mapping[target.key] = guess;
-
-            var field = document.createElement('div');
-            field.className = 'field';
-
-            var label = document.createElement('label');
-            label.textContent = target.label + (target.required ? ' *' : '');
-            field.appendChild(label);
-
-            var select = document.createElement('select');
-            select.dataset.key = target.key;
-
-            var noneOpt = document.createElement('option');
-            noneOpt.value = '';
-            noneOpt.textContent = '-- none --';
-            select.appendChild(noneOpt);
-
-            state.headers.forEach(function (h) {
-                var opt = document.createElement('option');
-                opt.value = h;
-                opt.textContent = h;
-                if (h === guess) opt.selected = true;
-                select.appendChild(opt);
-            });
-
-            select.addEventListener('change', function () {
-                state.mapping[target.key] = select.value;
-            });
-
-            field.appendChild(select);
-
-            if (!target.required) {
-                var small = document.createElement('small');
-                small.textContent = 'optional';
-                field.appendChild(small);
-            }
-
-            mappingGrid.appendChild(field);
+            state.mapping[target.key] = guessColumn(target);
         });
-
-        mappingPanel.style.display = 'block';
     }
 
     function parseWorkbookRows(workbook) {
@@ -338,15 +302,25 @@
         return rows;
     }
 
-    function loadRows(rows) {
+    function loadRows(rows, sourceLabel) {
         if (!rows.length) {
             setStatus('The file appears to be empty.', 'error');
             return;
         }
         state.rawRows = rows;
         state.headers = Object.keys(rows[0]);
-        buildMappingUI();
-        setStatus('Loaded ' + rows.length + ' rows. Review the column mapping below, then generate the chart.', 'ok');
+        autoMapColumns();
+
+        var activities = processActivities();
+        if (!activities) return;
+        state.activities = activities;
+        state.hiddenBuilds = {};
+        chartPanel.style.display = 'block';
+        render(activities);
+        renderLegend();
+
+        var prefix = sourceLabel ? sourceLabel + ' — ' : '';
+        setStatus(prefix + 'Rendered ' + activities.length + ' activities from ' + rows.length + ' row(s).', 'ok');
     }
 
     fileInput.addEventListener('change', function (e) {
@@ -365,7 +339,7 @@
                     workbook = XLSX.read(data, { type: 'binary' });
                 }
                 var rows = parseWorkbookRows(workbook);
-                loadRows(rows);
+                loadRows(rows, 'Loaded "' + file.name + '"');
             } catch (err) {
                 console.error(err);
                 setStatus('Failed to parse file: ' + err.message, 'error');
@@ -406,8 +380,7 @@
         var workbook = XLSX.read(sampleCSV(), { type: 'string', raw: true });
         var rows = parseWorkbookRows(workbook);
         fileInput.value = '';
-        loadRows(rows);
-        setStatus('Loaded built-in sample data (' + rows.length + ' rows). Review the mapping, then generate the chart.', 'ok');
+        loadRows(rows, 'Loaded built-in sample data');
     });
 
     function sampleCSV2() {
@@ -439,8 +412,7 @@
         var workbook = XLSX.read(sampleCSV2(), { type: 'string', raw: true });
         var rows = parseWorkbookRows(workbook);
         fileInput.value = '';
-        loadRows(rows);
-        setStatus('Loaded single-column sample data (' + rows.length + ' rows). Activity Code and Software Build are auto-derived from the Activity text — review the mapping, then generate the chart.', 'ok');
+        loadRows(rows, 'Loaded single-column sample data (build auto-derived from Activity text)');
     });
 
     function excelSerialToDate(value) {
@@ -490,6 +462,18 @@
         return state.buildColor[build];
     }
 
+    function textColorFor(hexColor) {
+        var hex = String(hexColor || '').replace('#', '');
+        if (hex.length === 3) hex = hex.split('').map(function (c) { return c + c; }).join('');
+        if (hex.length !== 6) return '#fff';
+        var r = parseInt(hex.substr(0, 2), 16) / 255;
+        var g = parseInt(hex.substr(2, 2), 16) / 255;
+        var b = parseInt(hex.substr(4, 2), 16) / 255;
+        var lin = [r, g, b].map(function (c) { return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); });
+        var luminance = 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2];
+        return luminance > 0.55 ? '#1a1a2e' : '#fff';
+    }
+
     function processActivities() {
         var map = state.mapping;
         var missing = COLUMN_TARGETS.filter(function (t) { return t.required && !map[t.key]; });
@@ -506,16 +490,18 @@
             var name = String(row[map.name] || '').trim();
             var id = map.id && row[map.id] !== '' ? String(row[map.id]).trim() : ('row' + idx);
 
-            // Activity Code is optional: when no column is mapped, fall back to the
-            // activity's own name/id so each row still renders as its own timeline row
-            // (matching a standard one-activity-per-row export).
-            var code = map.code ? String(row[map.code] || '').trim() : '';
-            if (!code) code = name || id;
-
             // Software Build is optional: when no column is mapped (or the cell is blank),
             // try to pull an embedded label such as "SWB 1.0" or "Build 2.1" out of the name.
             var build = map.build ? String(row[map.build] || '').trim() : '';
-            if (!build) build = extractBuildFromText(name) || 'Unassigned';
+            if (!build) build = extractBuildFromText(name) || '';
+
+            // Activity Code is optional: when no column is mapped, consolidate every
+            // activity belonging to the same software build onto a single timeline row
+            // (matching a Power BI-style rollup); activities with no detected build share
+            // one general row instead of each getting a row of its own.
+            var code = map.code ? String(row[map.code] || '').trim() : '';
+            if (!code) code = build || 'General';
+            if (!build) build = 'Unassigned';
 
             var start = parseDate(row[map.start]);
             var end = parseDate(row[map.end]);
@@ -545,14 +531,12 @@
         });
 
         if (!activities.length) {
-            setStatus('No valid rows found (need Activity Code, Start Date and End Date). ' + skipped + ' row(s) skipped.', 'error');
+            setStatus('No valid rows found (need Activity Name, Start Date and End Date). ' + skipped + ' row(s) skipped.', 'error');
             return null;
         }
 
         if (skipped) {
-            setStatus('Rendered ' + activities.length + ' activities (' + skipped + ' row(s) skipped due to missing data).', 'ok');
-        } else {
-            setStatus('Rendered ' + activities.length + ' activities.', 'ok');
+            setStatus(skipped + ' row(s) skipped due to missing/invalid data.', 'error');
         }
 
         return activities;
@@ -729,6 +713,18 @@
                     el.setAttribute('fill', act.color);
                     el.setAttribute('opacity', hidden ? 0 : 1);
                     svg.appendChild(el);
+
+                    if (!hidden) {
+                        var mlabel = document.createElementNS(ns, 'text');
+                        mlabel.setAttribute('x', cx + half + 5);
+                        mlabel.setAttribute('y', cy);
+                        mlabel.setAttribute('dominant-baseline', 'middle');
+                        mlabel.setAttribute('font-size', '10px');
+                        mlabel.setAttribute('fill', '#1a1a2e');
+                        mlabel.textContent = act.name;
+                        mlabel.style.pointerEvents = 'none';
+                        svg.appendChild(mlabel);
+                    }
                 } else {
                     el = document.createElementNS(ns, 'rect');
                     el.setAttribute('x', x1);
@@ -745,16 +741,31 @@
                     el.setAttribute('opacity', hidden ? 0 : opacity);
                     svg.appendChild(el);
 
-                    if (w > 24 || act.isGate) {
+                    if (!hidden) {
+                        var clipId = 'clip-' + act.id + '-' + Math.round(x1);
+                        var clip = document.createElementNS(ns, 'clipPath');
+                        clip.setAttribute('id', clipId);
+                        var clipRect = document.createElementNS(ns, 'rect');
+                        clipRect.setAttribute('x', x1 + 2);
+                        clipRect.setAttribute('y', barY);
+                        clipRect.setAttribute('width', Math.max(0, w - 4));
+                        clipRect.setAttribute('height', barH);
+                        clip.appendChild(clipRect);
+                        defs.appendChild(clip);
+
                         var text = document.createElementNS(ns, 'text');
                         text.setAttribute('x', x1 + 4);
                         text.setAttribute('y', barMidY);
                         text.setAttribute('dominant-baseline', 'middle');
                         text.setAttribute('font-size', '10px');
-                        text.setAttribute('fill', act.isGate ? '#1a1a2e' : '#fff');
-                        text.textContent = act.name.length > (w / 6) ? act.name.slice(0, Math.max(1, Math.floor(w / 6))) + '…' : act.name;
+                        text.setAttribute('fill', textColorFor(act.color));
+                        text.setAttribute('clip-path', 'url(#' + clipId + ')');
+                        text.textContent = act.name;
                         text.style.pointerEvents = 'none';
-                        if (!hidden) svg.appendChild(text);
+                        var titleEl2 = document.createElementNS(ns, 'title');
+                        titleEl2.textContent = act.name;
+                        text.appendChild(titleEl2);
+                        svg.appendChild(text);
                     }
                 }
 
@@ -850,21 +861,82 @@
         }
     }
 
-    renderBtn.addEventListener('click', function () {
-        var activities = processActivities();
-        if (!activities) return;
-        state.activities = activities;
-        state.hiddenBuilds = {};
-        chartPanel.style.display = 'block';
-        render(activities);
-        renderLegend();
-    });
-
     showDepsChk.addEventListener('change', function () {
         if (state.activities.length) render(state.activities);
     });
     showOverlapChk.addEventListener('change', function () {
         if (state.activities.length) render(state.activities);
+    });
+
+    printBtn.addEventListener('click', function () {
+        window.print();
+    });
+
+    // CSS classes used inside the SVG (bar/milestone/dep-line/etc.) live in the page's
+    // main <style> block, so they must be inlined into the SVG's own <defs> before it is
+    // serialized standalone — otherwise a rasterized/exported copy would lose all styling.
+    var SVG_EXPORT_STYLE =
+        '.bar{stroke:none;} .milestone{stroke:#1a1a2e;stroke-width:1;} ' +
+        '.grid-line{stroke:#e2e6ee;stroke-width:1;} .month-line{stroke:#dde2ec;stroke-width:1;} ' +
+        '.axis-text{font:11px sans-serif;fill:#666;} .row-label{font:12px sans-serif;fill:#1a1a2e;} ' +
+        '.dep-line{fill:none;stroke:#8a93a6;stroke-width:1.4;stroke-dasharray:3,3;}';
+
+    function buildExportSvgString() {
+        var clone = svg.cloneNode(true);
+        var styleEl = document.createElementNS('http://www.w3.org/2000/svg', 'style');
+        styleEl.textContent = SVG_EXPORT_STYLE;
+        clone.insertBefore(styleEl, clone.firstChild);
+        clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+        clone.style.background = '#ffffff';
+        var wrapperRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        wrapperRect.setAttribute('x', 0);
+        wrapperRect.setAttribute('y', 0);
+        wrapperRect.setAttribute('width', clone.getAttribute('width'));
+        wrapperRect.setAttribute('height', clone.getAttribute('height'));
+        wrapperRect.setAttribute('fill', '#ffffff');
+        clone.insertBefore(wrapperRect, styleEl.nextSibling);
+        return new XMLSerializer().serializeToString(clone);
+    }
+
+    pdfBtn.addEventListener('click', function () {
+        if (!state.activities.length) return;
+        var scale = 2;
+        var width = parseInt(svg.getAttribute('width'), 10) || 100;
+        var height = parseInt(svg.getAttribute('height'), 10) || 100;
+        var svgString = buildExportSvgString();
+        var svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+        var url = URL.createObjectURL(svgBlob);
+        var img = new Image();
+        img.onload = function () {
+            var canvas = document.createElement('canvas');
+            canvas.width = width * scale;
+            canvas.height = height * scale;
+            var ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            URL.revokeObjectURL(url);
+
+            var imgData = canvas.toDataURL('image/png');
+            var jsPDFCtor = window.jspdf && window.jspdf.jsPDF;
+            if (!jsPDFCtor) {
+                setStatus('PDF export library failed to load.', 'error');
+                return;
+            }
+            var orientation = width >= height ? 'landscape' : 'portrait';
+            var pdf = new jsPDFCtor({
+                orientation: orientation,
+                unit: 'pt',
+                format: [width, height]
+            });
+            pdf.addImage(imgData, 'PNG', 0, 0, width, height);
+            pdf.save('gantt-chart.pdf');
+        };
+        img.onerror = function () {
+            URL.revokeObjectURL(url);
+            setStatus('Failed to export PDF.', 'error');
+        };
+        img.src = url;
     });
 })();
 </script>
