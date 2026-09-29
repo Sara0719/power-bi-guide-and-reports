@@ -1,0 +1,1386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Software Build Gantt Chart</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+        --primary: #0066CC;
+        --primary-dark: #003399;
+        --accent: #FF6B35;
+        --success: #00B050;
+        --border: #E0E0E0;
+        --text-dark: #1a1a2e;
+        --text-light: #555;
+    }
+
+    body {
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: var(--text-dark);
+        min-height: 100vh;
+        padding: 20px;
+    }
+
+    .wrap { max-width: 1400px; margin: 0 auto; }
+
+    header {
+        background: linear-gradient(135deg, var(--primary-dark) 0%, var(--primary) 100%);
+        color: #fff;
+        padding: 30px 20px;
+        border-radius: 10px;
+        margin-bottom: 20px;
+        box-shadow: 0 10px 30px rgba(0,51,153,0.3);
+        text-align: center;
+    }
+    header h1 { font-size: 1.9em; margin-bottom: 8px; }
+    header p { opacity: .9; }
+    .back-link { display:inline-block; margin-top:14px; color:#fff; text-decoration:underline; opacity:.85; }
+
+    .panel {
+        background: #fff;
+        border-radius: 10px;
+        padding: 20px 24px;
+        margin-bottom: 20px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+    }
+
+    .panel h2 { color: var(--primary); font-size: 1.3em; margin-bottom: 12px; }
+
+    .upload-row { display:flex; flex-wrap:wrap; gap:16px; align-items:center; }
+
+    input[type="file"] {
+        border: 2px dashed var(--primary);
+        padding: 12px;
+        border-radius: 8px;
+        background: #E8F0FF;
+        cursor: pointer;
+        flex: 1 1 260px;
+    }
+
+    button, .btn {
+        background: var(--primary);
+        color: #fff;
+        border: none;
+        padding: 10px 18px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 0.95em;
+        font-weight: 600;
+        transition: .2s;
+    }
+    button:hover, .btn:hover { background: var(--primary-dark); }
+    button:disabled { background:#aaa; cursor:not-allowed; }
+    .btn-secondary { background:#6c757d; }
+    .btn-secondary:hover { background:#545b62; }
+
+    #status { font-size: 0.9em; color: var(--text-light); margin-top:10px; }
+    #status.error { color:#c0392b; font-weight:600; }
+    #status.ok { color: var(--success); font-weight:600; }
+
+    .mapping-grid {
+        display:grid;
+        grid-template-columns: repeat(auto-fit,minmax(220px,1fr));
+        gap: 14px;
+        margin-top: 14px;
+    }
+    .field { display:flex; flex-direction:column; gap:4px; }
+    .field label { font-size:.85em; font-weight:600; color:var(--text-light); }
+    .field small { color:#888; font-weight:400; }
+    select {
+        padding: 8px;
+        border-radius: 6px;
+        border: 1px solid var(--border);
+        font-size: .9em;
+    }
+
+    .toolbar { display:flex; flex-wrap:wrap; gap:12px; align-items:center; margin-top:14px; }
+    .toolbar label { font-size:.85em; color:var(--text-light); display:flex; align-items:center; gap:6px; }
+
+    #legend { display:flex; flex-wrap:wrap; gap:10px; margin-top:10px; }
+    .legend-item { display:flex; align-items:center; gap:6px; font-size:.85em; cursor:pointer; user-select:none; padding:4px 8px; border-radius:14px; border:1px solid var(--border); }
+    .legend-item.off { opacity:.35; }
+    .legend-swatch { width:14px; height:14px; border-radius:3px; display:inline-block; }
+
+    #chart-panel { overflow:auto; }
+    #chart-scroll { overflow-x:auto; overflow-y:hidden; border:1px solid var(--border); border-radius:8px; }
+    svg { display:block; font-family: inherit; }
+
+    .row-label { font-size: 12px; fill: var(--text-dark); }
+    .group-row-label { font-size: 12px; font-weight: 700; fill: var(--text-dark); }
+    .grid-line { stroke: #eee; stroke-width: 1; }
+    .month-line { stroke:#ccc; stroke-width:1; }
+    .axis-text { font-size: 11px; fill: var(--text-light); }
+    .bar { stroke: rgba(0,0,0,0.25); stroke-width: 0.5; rx: 3; cursor:pointer; }
+    .milestone { stroke: rgba(0,0,0,0.4); stroke-width: 1; cursor:pointer; }
+    .dep-line { fill:none; stroke:#1a1a2e; stroke-width:1.4; stroke-dasharray:3,3; opacity:.85; }
+
+    #tooltip {
+        position: fixed;
+        pointer-events: none;
+        background: rgba(20,20,30,0.95);
+        color:#fff;
+        padding:8px 12px;
+        border-radius:6px;
+        font-size:.8em;
+        line-height:1.5;
+        max-width:280px;
+        display:none;
+        z-index: 999;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+
+    .empty-state { text-align:center; padding:60px 20px; color:#888; }
+    .empty-state i { font-size: 2em; display:block; margin-bottom:10px; }
+
+    .hint { font-size:.82em; color:#888; margin-top:8px; }
+    code { background:#f3f3f3; padding:1px 5px; border-radius:4px; }
+
+    @media print {
+        body { background: #fff; padding: 0; }
+        .wrap { max-width: none; }
+        header, .panel:not(#chart-panel), .no-print, #tooltip { display: none !important; }
+        #chart-panel { box-shadow: none; border: none; padding: 0; margin: 0; }
+        #chart-scroll { overflow: visible !important; border: none; }
+    }
+</style>
+</head>
+<body>
+<div class="wrap">
+    <header>
+        <h1>📊 Software Build Gantt Chart</h1>
+        <p>Upload an Excel (.xlsx) or CSV file to generate an interactive Gantt chart</p>
+        <a class="back-link" href="new2.html">← Back to Power BI Reports</a>
+    </header>
+
+    <div class="panel">
+        <h2>1. Upload Data</h2>
+        <div class="upload-row">
+            <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" multiple>
+            <button id="loadSampleBtn" class="btn-secondary" type="button">Load Sample Data</button>
+            <button id="loadSample2Btn" class="btn-secondary" type="button">Load Single-Column Sample</button>
+        </div>
+        <p class="hint">
+            Just upload a file with an <strong>Activity</strong> (name) column and <strong>Start</strong> /
+            <strong>End</strong> date columns — no manual setup needed. You can select <strong>multiple files at
+            once</strong> (e.g. up to 5 CSVs, one per project) and they'll all be combined into a single chart. If a
+            file doesn't already have a <strong>Project</strong> column, every activity from that file is
+            automatically tagged with a Project name derived from its filename, so every activity always ends up
+            with a Project category. Activities that share a software build (auto-detected from the activity text,
+            e.g. "SWB 1.0" or "Build 2.1", or from a dedicated Software Build column if present) are automatically
+            consolidated onto a single row, in sequence, within their Project; activities without a detected build
+            share one general row. Rows where Start equals End are drawn as milestone diamonds, and activities named
+            <strong>FAT</strong>, <strong>SA</strong> or <strong>SAT</strong> are automatically colored as gate
+            reviews (green / yellow / gray) regardless of build. Optional <strong>Predecessors</strong> /
+            <strong>Successors</strong> columns (comma or semicolon separated Activity IDs) draw dependency lines.
+        </p>
+        <div id="status"></div>
+    </div>
+
+    <div class="panel" id="chart-panel" style="display:none;">
+        <h2>2. Gantt Chart</h2>
+        <div class="toolbar no-print">
+            <label><input type="checkbox" id="showDepsChk" checked> Show dependency lines</label>
+            <label><input type="checkbox" id="showOverlapChk" checked> Highlight overlapping activities</label>
+            <label>Fit to page size
+                <select id="pageSizeSel">
+                    <option value="A4">A4</option>
+                    <option value="A3" selected>A3</option>
+                    <option value="A2">A2</option>
+                    <option value="A1">A1</option>
+                    <option value="A0">A0</option>
+                    <option value="Letter">Letter</option>
+                    <option value="Tabloid">Tabloid</option>
+                    <option value="ArchD">Arch D (plotter)</option>
+                    <option value="ArchE">Arch E (plotter)</option>
+                </select>
+            </label>
+            <button id="printBtn" class="btn-secondary" type="button">🖨️ Print</button>
+            <button id="pdfBtn" class="btn-secondary" type="button">📄 Download PDF</button>
+        </div>
+        <div id="legend"></div>
+        <div id="chart-scroll" style="margin-top:16px;">
+            <div id="chart-empty" class="empty-state">
+                <i>📁</i>
+                No data yet — upload a file to generate the chart.
+            </div>
+            <svg id="chart" width="100" height="100"></svg>
+        </div>
+    </div>
+</div>
+<div id="tooltip"></div>
+
+<script>
+(function () {
+    'use strict';
+
+    var COLUMN_TARGETS = [
+        { key: 'product',     label: 'Product',         required: false, hints: ['product','project/product','product line'] },
+        { key: 'project',     label: 'Project',         required: false, hints: ['project','project name','project/product'] },
+        { key: 'code',        label: 'Activity Code',   required: false, hints: ['activity code','task code','code','sequence code','row code'] },
+        { key: 'build',       label: 'Software Build',  required: false, hints: ['build','software build','release','version'] },
+        { key: 'name',        label: 'Activity Name',   required: true,  hints: ['activity name','task name','name','activity','task','description'] },
+        { key: 'id',          label: 'Activity ID',     required: false, hints: ['activity id','task id','id','wbs'] },
+        { key: 'start',       label: 'Start Date',      required: true,  hints: ['start date','start','begin'] },
+        { key: 'end',         label: 'End Date',        required: true,  hints: ['end date','finish date','finish','end'] },
+        { key: 'predecessors',label: 'Predecessors',    required: false, hints: ['predecessor','predecessors','producer','producers'] },
+        { key: 'successors',  label: 'Successors',      required: false, hints: ['successor','successors'] }
+    ];
+
+    // Matches embedded build labels such as "SWB 1.0" or "Build 2.1" inside a combined
+    // activity description, used as a fallback when no dedicated Build column exists.
+    var BUILD_TEXT_PATTERN = /\b(SWB|Build)\s*([0-9]+(?:\.[0-9]+)?)\b/i;
+
+    function extractBuildFromText(text) {
+        var m = BUILD_TEXT_PATTERN.exec(String(text || ''));
+        if (!m) return '';
+        var prefix = /^swb$/i.test(m[1]) ? 'SWB' : 'Build';
+        return prefix + ' ' + m[2];
+    }
+
+    var BUILD_PALETTE = ['#0066CC','#FF6B35','#00B050','#8E44AD','#E74C3C','#17A2B8','#F1C40F','#2ECC71','#E67E22','#34495E'];
+
+    // Fixed gate colors for well-known milestone/test-phase activity names
+    // (matches the FAT / SA / SAT convention used in the source Gantt template)
+    var GATE_COLORS = [
+        { pattern: /^fat$/i,  color: '#00B050', label: 'FAT' },
+        { pattern: /^sat$/i,  color: '#BFBFBF', label: 'SAT' },
+        { pattern: /^sa$/i,   color: '#FFC000', label: 'SA' }
+    ];
+
+    function gateColorFor(name) {
+        var trimmed = String(name || '').trim();
+        for (var i = 0; i < GATE_COLORS.length; i++) {
+            if (GATE_COLORS[i].pattern.test(trimmed)) return GATE_COLORS[i];
+        }
+        return null;
+    }
+
+    var state = {
+        rawRows: [],
+        headers: [],
+        mapping: {},
+        buildColor: {},
+        hiddenBuilds: {},
+        activities: []
+    };
+
+    var fileInput = document.getElementById('fileInput');
+    var loadSampleBtn = document.getElementById('loadSampleBtn');
+    var statusEl = document.getElementById('status');
+    var chartPanel = document.getElementById('chart-panel');
+    var chartEmpty = document.getElementById('chart-empty');
+    var svg = document.getElementById('chart');
+    var legendEl = document.getElementById('legend');
+    var tooltip = document.getElementById('tooltip');
+    var showDepsChk = document.getElementById('showDepsChk');
+    var showOverlapChk = document.getElementById('showOverlapChk');
+    var printBtn = document.getElementById('printBtn');
+    var pdfBtn = document.getElementById('pdfBtn');
+    var pageSizeSel = document.getElementById('pageSizeSel');
+
+    function setStatus(msg, type) {
+        statusEl.textContent = msg;
+        statusEl.className = type || '';
+    }
+
+    function normalizeHeader(h) {
+        return String(h || '').trim().toLowerCase();
+    }
+
+    function guessColumn(headers, target, exclude) {
+        exclude = exclude || {};
+        for (var i = 0; i < headers.length; i++) {
+            var h = headers[i];
+            if (exclude[h]) continue;
+            var norm = normalizeHeader(h);
+            if (target.hints.indexOf(norm) !== -1) return h;
+        }
+        for (var j = 0; j < headers.length; j++) {
+            var h2 = headers[j];
+            if (exclude[h2]) continue;
+            var normJ = normalizeHeader(h2);
+            for (var k = 0; k < target.hints.length; k++) {
+                if (normJ.indexOf(target.hints[k]) !== -1) return h2;
+            }
+        }
+        return '';
+    }
+
+    // Silently auto-detects every column (no manual mapping UI shown to the user)
+    // for a given file's header row. Returns a mapping object; does not mutate state,
+    // so it can be called once per uploaded file.
+    function autoMapColumns(headers) {
+        var mapping = {};
+        var used = {};
+        COLUMN_TARGETS.forEach(function (target) {
+            var col = guessColumn(headers, target, used);
+            mapping[target.key] = col;
+            // Product/Project are allowed to both resolve to a single combined
+            // "Project/Product" column (common in source templates) rather than
+            // being excluded from each other's search.
+            if (col && target.key !== 'product' && target.key !== 'project') used[col] = true;
+        });
+        if (!mapping.product && mapping.project) mapping.product = mapping.project;
+        if (!mapping.project && mapping.product) mapping.project = mapping.product;
+        return mapping;
+    }
+
+    // Some exports (e.g. printed/PDF-derived Gantt sheets) have one or more title/banner
+    // rows above the real header row. Scan the first several rows and pick the one whose
+    // cells best match our expected column hints, instead of always assuming row 1.
+    function findHeaderRowIndex(matrix) {
+        var allHints = [];
+        COLUMN_TARGETS.forEach(function (t) { allHints = allHints.concat(t.hints); });
+        var scanRows = Math.min(matrix.length, 20);
+        var bestIdx = 0, bestScore = 0;
+        for (var r = 0; r < scanRows; r++) {
+            var row = matrix[r] || [];
+            var nonEmpty = row.filter(function (c) { return String(c || '').trim() !== ''; }).length;
+            if (nonEmpty < 2) continue;
+            var score = 0;
+            row.forEach(function (cell) {
+                var norm = normalizeHeader(cell);
+                if (!norm) return;
+                for (var k = 0; k < allHints.length; k++) {
+                    if (norm === allHints[k] || norm.indexOf(allHints[k]) !== -1) { score++; break; }
+                }
+            });
+            if (score > bestScore) { bestScore = score; bestIdx = r; }
+        }
+        return bestIdx;
+    }
+
+    function parseWorkbookRows(workbook) {
+        var sheetName = workbook.SheetNames[0];
+        var sheet = workbook.Sheets[sheetName];
+        var matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: true, blankrows: false });
+        if (!matrix.length) return [];
+
+        var headerIdx = findHeaderRowIndex(matrix);
+        var headerRow = matrix[headerIdx] || [];
+        var seen = {};
+        var headers = headerRow.map(function (h, i) {
+            var text = String(h || '').trim();
+            if (!text) text = 'Column' + (i + 1);
+            if (seen[text]) { seen[text]++; text = text + ' (' + seen[text] + ')'; } else { seen[text] = 1; }
+            return text;
+        });
+
+        var rows = [];
+        for (var r = headerIdx + 1; r < matrix.length; r++) {
+            var arr = matrix[r] || [];
+            var obj = {};
+            var hasValue = false;
+            for (var c = 0; c < headers.length; c++) {
+                var val = arr[c] !== undefined ? arr[c] : '';
+                obj[headers[c]] = val;
+                if (String(val).trim() !== '') hasValue = true;
+            }
+            if (hasValue) rows.push(obj);
+        }
+        return rows;
+    }
+
+    // Excel merged cells (e.g. a Product/Project label spanning many activity rows) are
+    // only stored on the first row of the merge; subsequent rows read back blank. Carry
+    // the last non-blank value down so every activity in that block still resolves it.
+    function forwardFillColumn(rows, mapping, key) {
+        var col = mapping[key];
+        if (!col) return;
+        var last = '';
+        rows.forEach(function (row) {
+            var v = String(row[col] || '').trim();
+            if (v) last = v; else row[col] = last;
+        });
+    }
+
+    // Derive a human-friendly Project label from a filename, used as a fallback so every
+    // activity always has a Project category even when its source file has no Project /
+    // Product column of its own (e.g. a plain Activity/Start/End sheet per project).
+    function projectNameFromFilename(filename) {
+        var base = String(filename || '').replace(/\.[^/.]+$/, '');
+        base = base.replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
+        return base || 'Project';
+    }
+
+    // Converts one file's rows (with that file's own headers/mapping) into rows keyed by
+    // fixed canonical field names, so rows from files with completely different header
+    // layouts can be safely merged into a single dataset before rendering. If the file has
+    // no Project/Product column, every row is tagged with the given fallback Project name.
+    function toCanonicalRows(rows, mapping, fallbackProject) {
+        return rows.map(function (row) {
+            var obj = {};
+            COLUMN_TARGETS.forEach(function (target) {
+                var col = mapping[target.key];
+                obj[target.key] = col ? row[col] : '';
+            });
+            if (!String(obj.project || '').trim() && !String(obj.product || '').trim() && fallbackProject) {
+                obj.project = fallbackProject;
+            }
+            return obj;
+        });
+    }
+
+    var CANONICAL_MAPPING = (function () {
+        var m = {};
+        COLUMN_TARGETS.forEach(function (t) { m[t.key] = t.key; });
+        return m;
+    })();
+
+    // Parses one workbook's rows into canonical rows ready for merging, handling its own
+    // header detection, column mapping, merged-cell forward-fill and Project fallback.
+    // `useFilenameFallback` is disabled for the built-in sample datasets (which are
+    // intentionally single-project/ungrouped) so their descriptive labels never get
+    // mistaken for a Project name.
+    function harmonizeFileRows(rows, filename, useFilenameFallback) {
+        if (!rows.length) return { rows: [], missing: [] };
+        var headers = Object.keys(rows[0]);
+        var mapping = autoMapColumns(headers);
+        forwardFillColumn(rows, mapping, 'product');
+        forwardFillColumn(rows, mapping, 'project');
+        var missing = COLUMN_TARGETS.filter(function (t) { return t.required && !mapping[t.key]; });
+        var fallbackProject = useFilenameFallback ? projectNameFromFilename(filename) : '';
+        var canonical = toCanonicalRows(rows, mapping, fallbackProject);
+        return { rows: canonical, missing: missing, headers: headers };
+    }
+
+    function loadRows(rows, sourceLabel) {
+        loadHarmonizedFiles([{ rows: rows, name: sourceLabel || 'data' }], { useFilenameFallback: false });
+    }
+
+    // Accepts an array of { rows, name } — one entry per uploaded file (or sample
+    // dataset) — harmonizes each independently, merges them into one dataset, and
+    // renders the combined chart grouped by Product → Project → Build.
+    function loadHarmonizedFiles(files, opts) {
+        opts = opts || {};
+        var useFilenameFallback = opts.useFilenameFallback !== false;
+        var combined = [];
+        var missingByFile = [];
+        var totalRawRows = 0;
+        files.forEach(function (f) {
+            if (!f.rows.length) return;
+            totalRawRows += f.rows.length;
+            var result = harmonizeFileRows(f.rows, f.name, useFilenameFallback);
+            if (result.missing.length) {
+                missingByFile.push(f.name + ': ' + result.missing.map(function (m) { return m.label; }).join(', '));
+            }
+            combined = combined.concat(result.rows);
+        });
+
+        if (!totalRawRows) {
+            setStatus('The file(s) appear to be empty.', 'error');
+            return;
+        }
+        if (!combined.length) {
+            setStatus('Could not find required column(s) in: ' + missingByFile.join(' | '), 'error');
+            return;
+        }
+
+        state.rawRows = combined;
+        state.headers = Object.keys(CANONICAL_MAPPING);
+        state.mapping = CANONICAL_MAPPING;
+
+        var activities = processActivities();
+        if (!activities) return;
+        state.activities = activities;
+        state.hiddenBuilds = {};
+        chartPanel.style.display = 'block';
+        render(activities);
+        renderLegend();
+
+        var fileCount = files.filter(function (f) { return f.rows.length; }).length;
+        var prefix = fileCount > 1 ? 'Loaded ' + fileCount + ' files — ' : (files[0] && files[0].name ? files[0].name + ' — ' : '');
+        var msg = prefix + 'Rendered ' + activities.length + ' activities from ' + totalRawRows + ' row(s).';
+        if (missingByFile.length) {
+            msg += ' (Some rows skipped — missing required column(s) in: ' + missingByFile.join(' | ') + ')';
+        }
+        setStatus(msg, missingByFile.length ? 'error' : 'ok');
+    }
+
+    function readFileAsWorkbookRows(file) {
+        return new Promise(function (resolve, reject) {
+            var reader = new FileReader();
+            reader.onload = function (evt) {
+                try {
+                    var data = evt.target.result;
+                    var workbook;
+                    if (/\.csv$/i.test(file.name)) {
+                        workbook = XLSX.read(data, { type: 'binary', raw: true });
+                    } else {
+                        workbook = XLSX.read(data, { type: 'binary' });
+                    }
+                    resolve({ rows: parseWorkbookRows(workbook), name: file.name });
+                } catch (err) {
+                    reject(err);
+                }
+            };
+            reader.onerror = function () {
+                reject(new Error('Failed to read file "' + file.name + '".'));
+            };
+            reader.readAsBinaryString(file);
+        });
+    }
+
+    fileInput.addEventListener('change', function (e) {
+        var files = Array.prototype.slice.call(e.target.files || []);
+        if (!files.length) return;
+        setStatus('Reading ' + files.length + ' file' + (files.length > 1 ? 's' : '') + '...');
+
+        Promise.all(files.map(readFileAsWorkbookRows))
+            .then(function (results) {
+                loadHarmonizedFiles(results);
+            })
+            .catch(function (err) {
+                console.error(err);
+                setStatus('Failed to parse file: ' + err.message, 'error');
+            });
+    });
+
+    function sampleCSV() {
+        return [
+            'Activity ID,Activity Code,Software Build,Activity Name,Start Date,End Date,Predecessors',
+            'D1,System Design M1,Build 1.0,System Design M1,2026-01-05,2026-07-15,',
+            'D2,System Design M1,Build 1.0,Design Baseline,2026-04-01,2026-04-01,',
+            'D3,System Design M2,Build 1.1,System Design M2,2026-08-01,2027-01-15,',
+            'B1,SW Build 1.0,Build 1.0,SW Build 1,2026-04-01,2026-07-20,D2',
+            'B1a,SW Build 1.0,Build 1.0,FAT,2026-07-21,2026-07-25,B1',
+            'B1b,SW Build 1.0,Build 1.0,SA,2026-07-26,2026-07-28,B1a',
+            'B1c,SW Build 1.0,Build 1.0,SAT,2026-07-29,2026-08-10,B1b',
+            'B2,SW Build 1.1,Build 1.1,SW Build 1.1,2026-07-21,2026-09-15,B1',
+            'B2a,SW Build 1.1,Build 1.1,FAT,2026-09-16,2026-09-20,B2',
+            'B2b,SW Build 1.1,Build 1.1,SA,2026-09-21,2026-09-23,B2a',
+            'B3,SW Build 1.2,Build 1.2,SW Build 1.2,2026-09-16,2026-10-30,B2',
+            'B3a,SW Build 1.2,Build 1.2,FAT,2026-10-31,2026-11-04,B3',
+            'B3b,SW Build 1.2,Build 1.2,SA,2026-11-05,2026-11-07,B3a',
+            'B4,SW Build 2.0,Build 2.0,SW Build 2,2026-10-31,2026-12-20,B3',
+            'B4a,SW Build 2.0,Build 2.0,FAT,2026-12-21,2026-12-27,B4',
+            'B4b,SW Build 2.0,Build 2.0,SA,2026-12-28,2027-01-02,B4a',
+            'B4c,SW Build 2.0,Build 2.0,SAT,2027-01-03,2027-01-15,B4b',
+            'B5,SW Build 2.1,Build 2.1,SW Build 2.1,2026-12-21,2027-02-10,B4',
+            'B5a,SW Build 2.1,Build 2.1,FAT,2027-02-11,2027-02-15,B5'
+        ].join('\n');
+    }
+
+    loadSampleBtn.addEventListener('click', function () {
+        var workbook = XLSX.read(sampleCSV(), { type: 'string', raw: true });
+        var rows = parseWorkbookRows(workbook);
+        fileInput.value = '';
+        loadRows(rows, 'Loaded built-in sample data');
+    });
+
+    function sampleCSV2() {
+        // Mimics a raw MS Project-style export where each row only has a single combined
+        // "Activity" description (embedding the code + "SWB x.x" build label) plus dates,
+        // with no dedicated Activity Code / Software Build columns.
+        return [
+            'Activity,Start Date,End Date',
+            'AE25061-RM-SD1190-Phase 1 Design & Documentation,2026-01-05,2026-04-20',
+            'AE25061-RM-MS1000-CDR - Signaling system submission,2026-04-20,2026-04-20',
+            'AE25061-RM-MS1010-PDR - Signaling system submission,2026-06-10,2026-06-10',
+            'AE25061-RM-MS1020-FDR- Signaling system submission,2026-08-01,2026-08-01',
+            'AE25061-RM-SD1200-Phase 2 Design & Documentation,2026-08-01,2026-12-15',
+            'AE25061-RM-SD1000-SWB 1.0-System Design,2026-02-01,2026-03-15',
+            'AE25061-RM-SW1000-SWB 1.0-SW Development,2026-03-16,2026-05-30',
+            'AE25061-RM-ST1000-SWB 1.0-SW Test,2026-06-01,2026-07-20',
+            'AE25061-RM-SD1010-SWB 2.0-System Design,2026-07-21,2026-09-10',
+            'AE25061-RM-SW1010-SWB 2.0-SW Development,2026-09-11,2026-11-05',
+            'AE25061-RM-ST1010-SWB 2.0-SW Test,2026-11-06,2026-12-20',
+            'AE25061-RM-SA1010-SWB 2.0-Safety Appraisal,2026-12-21,2027-01-15',
+            'AE25061-RM-SD1020-SWB 3.0-System Design,2027-01-16,2027-03-01',
+            'AE25061-RM-SW1020-SWB 3.0-SW Development,2027-03-02,2027-04-20',
+            'AE25061-RM-ST1020-SWB 3.0-SW Test,2027-04-21,2027-06-10',
+            'AE25061-RM-SA1020-SWB 3.0-Safety Appraisal,2027-06-11,2027-06-30'
+        ].join('\n');
+    }
+
+    document.getElementById('loadSample2Btn').addEventListener('click', function () {
+        var workbook = XLSX.read(sampleCSV2(), { type: 'string', raw: true });
+        var rows = parseWorkbookRows(workbook);
+        fileInput.value = '';
+        loadRows(rows, 'Loaded single-column sample data (build auto-derived from Activity text)');
+    });
+
+    function excelSerialToDate(value) {
+        var date = new Date(Math.round((value - 25569) * 86400 * 1000));
+        return date;
+    }
+
+    function parseDate(value) {
+        if (value === '' || value === null || value === undefined) return null;
+        if (value instanceof Date) return value;
+        if (typeof value === 'number') return excelSerialToDate(value);
+        var s = String(value).trim();
+        var d = new Date(s);
+        if (!isNaN(d.getTime())) return d;
+        var m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+        if (m) {
+            var mm = parseInt(m[1], 10) - 1;
+            var dd = parseInt(m[2], 10);
+            var yy = parseInt(m[3], 10);
+            if (yy < 100) yy += 2000;
+            var d2 = new Date(yy, mm, dd);
+            if (!isNaN(d2.getTime())) return d2;
+        }
+        return null;
+    }
+
+    function startOfDay(d) {
+        return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    }
+
+    function addDays(d, n) {
+        var r = new Date(d);
+        r.setDate(r.getDate() + n);
+        return r;
+    }
+
+    function splitList(value) {
+        if (!value) return [];
+        return String(value).split(/[,;]/).map(function (s) { return s.trim(); }).filter(Boolean);
+    }
+
+    function buildColorFor(build) {
+        if (!state.buildColor[build]) {
+            var idx = Object.keys(state.buildColor).length % BUILD_PALETTE.length;
+            state.buildColor[build] = BUILD_PALETTE[idx];
+        }
+        return state.buildColor[build];
+    }
+
+    function textColorFor(hexColor) {
+        var hex = String(hexColor || '').replace('#', '');
+        if (hex.length === 3) hex = hex.split('').map(function (c) { return c + c; }).join('');
+        if (hex.length !== 6) return '#fff';
+        var r = parseInt(hex.substr(0, 2), 16) / 255;
+        var g = parseInt(hex.substr(2, 2), 16) / 255;
+        var b = parseInt(hex.substr(4, 2), 16) / 255;
+        var lin = [r, g, b].map(function (c) { return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); });
+        var luminance = 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2];
+        return luminance > 0.55 ? '#1a1a2e' : '#fff';
+    }
+
+    function processActivities() {
+        var map = state.mapping;
+        var missing = COLUMN_TARGETS.filter(function (t) { return t.required && !map[t.key]; });
+        if (missing.length) {
+            setStatus('Could not find required column(s): ' + missing.map(function (m) { return m.label; }).join(', ') +
+                '. Detected column headers in the file: "' + state.headers.join('", "') + '". ' +
+                'Rename the relevant column to include a recognizable word (e.g. "Activity", "Start", "End") or make sure the ' +
+                'header row (not a title/banner row) is the first row of data.', 'error');
+            return null;
+        }
+
+        state.buildColor = {};
+        var activities = [];
+        var skipped = 0;
+
+        state.rawRows.forEach(function (row, idx) {
+            var name = String(row[map.name] || '').trim();
+            var id = map.id && row[map.id] !== '' ? String(row[map.id]).trim() : ('row' + idx);
+
+            var product = map.product ? String(row[map.product] || '').trim() : '';
+            var project = map.project ? String(row[map.project] || '').trim() : '';
+            // When Product and Project both resolved to the same combined column (e.g. a
+            // single "Project/Product" header), avoid a duplicate grouping level.
+            if (map.product && map.project && map.product === map.project) project = '';
+
+            // Software Build is optional: when no column is mapped (or the cell is blank),
+            // try to pull an embedded label such as "SWB 1.0" or "Build 2.1" out of the name.
+            var build = map.build ? String(row[map.build] || '').trim() : '';
+            if (!build) build = extractBuildFromText(name) || '';
+
+            // Activity Code is optional: when no column is mapped, consolidate every
+            // activity belonging to the same software build onto a single timeline row
+            // (matching a Power BI-style rollup); activities with no detected build share
+            // one general row instead of each getting a row of its own.
+            var codeLabel = map.code ? String(row[map.code] || '').trim() : '';
+            if (!codeLabel) codeLabel = build || 'General';
+            if (!build) build = 'Unassigned';
+
+            // Namespace the row-grouping key by Product/Project so that, e.g., two
+            // different projects that both have a "SWB 1.0" build still get their own rows.
+            var code = (product || project) ? (product + '\u0001' + project + '\u0001' + codeLabel) : codeLabel;
+
+            var start = parseDate(row[map.start]);
+            var end = parseDate(row[map.end]);
+
+            if (!codeLabel || !start || !end) {
+                skipped++;
+                return;
+            }
+            if (end < start) { var tmp = start; start = end; end = tmp; }
+
+            var gate = gateColorFor(name);
+            var sameDay = startOfDay(start).getTime() === startOfDay(end).getTime();
+
+            activities.push({
+                id: id,
+                code: code,
+                codeLabel: codeLabel,
+                product: product,
+                project: project,
+                build: build,
+                name: name || id,
+                start: startOfDay(start),
+                end: startOfDay(end),
+                predecessors: splitList(map.predecessors ? row[map.predecessors] : ''),
+                successors: splitList(map.successors ? row[map.successors] : ''),
+                color: gate ? gate.color : buildColorFor(build),
+                isGate: !!gate,
+                isMilestone: sameDay
+            });
+        });
+
+        if (!activities.length) {
+            setStatus('No valid rows found (need Activity Name, Start Date and End Date). ' + skipped + ' row(s) skipped.', 'error');
+            return null;
+        }
+
+        if (skipped) {
+            setStatus(skipped + ' row(s) skipped due to missing/invalid data.', 'error');
+        }
+
+        // Merge exact duplicates: the same activity (same Product/Project, Activity Name,
+        // Start and End) can appear more than once — e.g. when combining several uploaded
+        // files that share some rows, or when a source sheet repeats a row. Collapse those
+        // into a single activity instead of drawing overlapping duplicate bars, keeping the
+        // union of predecessors/successors from every duplicate.
+        var dedupMap = {};
+        var deduped = [];
+        activities.forEach(function (a) {
+            var key = [a.product, a.project, a.name.toLowerCase(), a.start.getTime(), a.end.getTime()].join('\u0001');
+            var existing = dedupMap[key];
+            if (existing) {
+                existing.predecessors = uniqueList(existing.predecessors.concat(a.predecessors));
+                existing.successors = uniqueList(existing.successors.concat(a.successors));
+                return;
+            }
+            dedupMap[key] = a;
+            deduped.push(a);
+        });
+
+        return deduped;
+    }
+
+    function uniqueList(list) {
+        var seen = {};
+        var out = [];
+        list.forEach(function (v) {
+            if (!v || seen[v]) return;
+            seen[v] = true;
+            out.push(v);
+        });
+        return out;
+    }
+
+    function assignLanes(rowActivities) {
+        rowActivities.sort(function (a, b) { return a.start - b.start || a.end - b.end; });
+        var lanes = [];
+        rowActivities.forEach(function (act) {
+            var placed = false;
+            for (var i = 0; i < lanes.length; i++) {
+                if (lanes[i] < act.start.getTime()) {
+                    lanes[i] = act.end.getTime();
+                    act.lane = i;
+                    placed = true;
+                    break;
+                }
+            }
+            if (!placed) {
+                act.lane = lanes.length;
+                lanes.push(act.end.getTime());
+            }
+        });
+        return lanes.length;
+    }
+
+    var LAYOUT = {
+        marginLeft: 150,
+        marginTop: 50,
+        marginBottom: 30,
+        marginRight: 40,
+        dayWidth: 14,
+        rowHeight: 34,
+        laneOffset: 12,
+        barMinHeight: 16
+    };
+
+    function render(activities) {
+        var hasProduct = activities.some(function (a) { return a.product; });
+        var hasProject = activities.some(function (a) { return a.project; });
+
+        // group by (namespaced) code — one row per software build / activity group
+        var byCode = {};
+        activities.forEach(function (a) {
+            if (!byCode[a.code]) byCode[a.code] = [];
+            byCode[a.code].push(a);
+        });
+
+        var codeMeta = {};
+        Object.keys(byCode).forEach(function (code) {
+            var acts = byCode[code];
+            var minStart = null, maxEnd = null;
+            acts.forEach(function (a) {
+                if (!minStart || a.start < minStart) minStart = a.start;
+                if (!maxEnd || a.end > maxEnd) maxEnd = a.end;
+            });
+            codeMeta[code] = {
+                product: acts[0].product || '',
+                project: acts[0].project || '',
+                label: acts[0].codeLabel || code,
+                minStart: minStart,
+                maxEnd: maxEnd
+            };
+        });
+
+        var codes = Object.keys(byCode).sort(function (a, b) {
+            var ma = codeMeta[a], mb = codeMeta[b];
+            if (ma.product !== mb.product) return ma.product.localeCompare(mb.product);
+            if (ma.project !== mb.project) return ma.project.localeCompare(mb.project);
+            return ma.label.localeCompare(mb.label);
+        });
+
+        var maxLanesPerCode = {};
+        codes.forEach(function (code) {
+            maxLanesPerCode[code] = assignLanes(byCode[code]);
+        });
+
+        // Build product/project group ranges (min/max dates) for the summary banner bars.
+        var groupRanges = {};
+        codes.forEach(function (code) {
+            var m = codeMeta[code];
+            [
+                hasProduct && m.product ? 'P\u0001' + m.product : null,
+                hasProject && (m.product || m.project) ? 'J\u0001' + m.product + '\u0001' + m.project : null
+            ].forEach(function (gk) {
+                if (!gk) return;
+                if (!groupRanges[gk]) groupRanges[gk] = { minStart: m.minStart, maxEnd: m.maxEnd };
+                else {
+                    if (m.minStart < groupRanges[gk].minStart) groupRanges[gk].minStart = m.minStart;
+                    if (m.maxEnd > groupRanges[gk].maxEnd) groupRanges[gk].maxEnd = m.maxEnd;
+                }
+            });
+        });
+
+        // Flatten into an ordered list of rows to draw: Product header > Project header > Build rows.
+        var layoutRows = [];
+        var lastProduct = null, lastProject = null;
+        codes.forEach(function (code) {
+            var m = codeMeta[code];
+            if (hasProduct && m.product !== lastProduct) {
+                layoutRows.push({ type: 'group', level: 0, label: m.product || 'Standalone', range: groupRanges['P\u0001' + m.product] });
+                lastProduct = m.product;
+                lastProject = null;
+            }
+            if (hasProject && (m.project || m.product) && m.project !== lastProject) {
+                layoutRows.push({ type: 'group', level: hasProduct ? 1 : 0, label: m.project || 'Standalone', range: groupRanges['J\u0001' + m.product + '\u0001' + m.project] });
+                lastProject = m.project;
+            }
+            layoutRows.push({ type: 'code', level: (hasProduct ? 1 : 0) + (hasProject ? 1 : 0), label: m.label, code: code, activities: byCode[code], lanes: maxLanesPerCode[code] });
+        });
+
+        var minDate = null, maxDate = null;
+        activities.forEach(function (a) {
+            if (!minDate || a.start < minDate) minDate = a.start;
+            if (!maxDate || a.end > maxDate) maxDate = a.end;
+        });
+        minDate = addDays(minDate, -2);
+        maxDate = addDays(maxDate, 2);
+        var totalDays = Math.max(1, Math.round((maxDate - minDate) / 86400000));
+
+        var xForDate = function (d) {
+            var days = Math.round((startOfDay(d) - minDate) / 86400000);
+            return LAYOUT.marginLeft + days * LAYOUT.dayWidth;
+        };
+
+        var GROUP_ROW_HEIGHT = 26;
+        var y = LAYOUT.marginTop;
+        layoutRows.forEach(function (row) {
+            row.top = y;
+            if (row.type === 'group') {
+                row.height = GROUP_ROW_HEIGHT;
+            } else {
+                row.height = LAYOUT.rowHeight + (row.lanes - 1) * LAYOUT.laneOffset;
+            }
+            y += row.height;
+        });
+
+        var chartWidth = LAYOUT.marginLeft + totalDays * LAYOUT.dayWidth + LAYOUT.marginRight;
+        var chartHeight = y + LAYOUT.marginBottom;
+
+        var ns = 'http://www.w3.org/2000/svg';
+        svg.setAttribute('width', chartWidth);
+        svg.setAttribute('height', chartHeight);
+        svg.innerHTML = '';
+
+        var defs = document.createElementNS(ns, 'defs');
+        defs.innerHTML = '<marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">' +
+            '<path d="M0,0 L10,5 L0,10 z" fill="#555"></path></marker>';
+        svg.appendChild(defs);
+
+        // month gridlines + axis labels
+        var cursor = new Date(minDate);
+        cursor.setDate(1);
+        while (cursor <= maxDate) {
+            if (cursor >= minDate) {
+                var mx = xForDate(cursor);
+                var line = document.createElementNS(ns, 'line');
+                line.setAttribute('x1', mx); line.setAttribute('x2', mx);
+                line.setAttribute('y1', LAYOUT.marginTop - 20); line.setAttribute('y2', chartHeight - LAYOUT.marginBottom);
+                line.setAttribute('class', 'month-line');
+                svg.appendChild(line);
+
+                var label = document.createElementNS(ns, 'text');
+                label.setAttribute('x', mx + 4);
+                label.setAttribute('y', LAYOUT.marginTop - 26);
+                label.setAttribute('class', 'axis-text');
+                label.textContent = cursor.toLocaleDateString(undefined, { month: 'short', year: 'numeric' });
+                svg.appendChild(label);
+            }
+            cursor.setMonth(cursor.getMonth() + 1);
+        }
+
+        // row backgrounds + labels (including Product/Project group header banners)
+        layoutRows.forEach(function (row, i) {
+            var top = row.top;
+            var h = row.height;
+            var indent = 10 + row.level * 14;
+
+            if (row.type === 'group') {
+                var band = document.createElementNS(ns, 'rect');
+                band.setAttribute('x', 0);
+                band.setAttribute('y', top - 4);
+                band.setAttribute('width', chartWidth);
+                band.setAttribute('height', h);
+                band.setAttribute('fill', row.level === 0 ? '#e9ecf5' : '#f1f3fa');
+                svg.appendChild(band);
+
+                var glabel = document.createElementNS(ns, 'text');
+                glabel.setAttribute('x', indent);
+                glabel.setAttribute('y', top + h / 2 - 4);
+                glabel.setAttribute('class', 'group-row-label');
+                glabel.setAttribute('dominant-baseline', 'middle');
+                var maxGroupChars = 22 - row.level * 3;
+                glabel.textContent = row.label.length > maxGroupChars ? row.label.slice(0, maxGroupChars - 1) + '…' : row.label;
+                if (row.label.length > maxGroupChars) {
+                    var gtitle = document.createElementNS(ns, 'title');
+                    gtitle.textContent = row.label;
+                    glabel.appendChild(gtitle);
+                }
+                svg.appendChild(glabel);
+
+                if (row.range && row.range.minStart && row.range.maxEnd) {
+                    var gx1 = xForDate(row.range.minStart);
+                    var gx2 = xForDate(addDays(row.range.maxEnd, 1));
+                    var gbar = document.createElementNS(ns, 'rect');
+                    gbar.setAttribute('x', gx1);
+                    gbar.setAttribute('y', top + h / 2 - 5);
+                    gbar.setAttribute('width', Math.max(2, gx2 - gx1));
+                    gbar.setAttribute('height', 10);
+                    gbar.setAttribute('rx', 4);
+                    gbar.setAttribute('fill', row.level === 0 ? '#c96a63' : '#d98a86');
+                    svg.appendChild(gbar);
+                }
+            } else {
+                if (i % 2 === 0) {
+                    var rect = document.createElementNS(ns, 'rect');
+                    rect.setAttribute('x', 0);
+                    rect.setAttribute('y', top - 4);
+                    rect.setAttribute('width', chartWidth);
+                    rect.setAttribute('height', h);
+                    rect.setAttribute('fill', '#f7f9fc');
+                    svg.appendChild(rect);
+                }
+                var label = document.createElementNS(ns, 'text');
+                label.setAttribute('x', indent);
+                label.setAttribute('y', top + h / 2);
+                label.setAttribute('class', 'row-label');
+                label.setAttribute('dominant-baseline', 'middle');
+                var maxChars = 22 - row.level * 3;
+                label.textContent = row.label.length > maxChars ? row.label.slice(0, maxChars - 1) + '…' : row.label;
+                if (row.label.length > maxChars) {
+                    var titleEl = document.createElementNS(ns, 'title');
+                    titleEl.textContent = row.label;
+                    label.appendChild(titleEl);
+                }
+                svg.appendChild(label);
+            }
+
+            var sep = document.createElementNS(ns, 'line');
+            sep.setAttribute('x1', 0); sep.setAttribute('x2', chartWidth);
+            sep.setAttribute('y1', top - 4); sep.setAttribute('y2', top - 4);
+            sep.setAttribute('class', 'grid-line');
+            svg.appendChild(sep);
+        });
+
+        var showOverlap = showOverlapChk.checked;
+        var barLookup = {};
+        var MILESTONE_SIZE = 9;
+
+        layoutRows.forEach(function (row) {
+            if (row.type !== 'code') return;
+            var top = row.top;
+            row.activities.forEach(function (act) {
+                var x1 = xForDate(act.start);
+                var x2 = xForDate(addDays(act.end, 1));
+                var w = Math.max(2, x2 - x1);
+                var isOverlap = act.lane > 0;
+                var barY = top + act.lane * LAYOUT.laneOffset;
+                var barH = LAYOUT.barMinHeight - (isOverlap ? 4 : 0);
+                var barMidY = barY + barH / 2;
+                var hidden = state.hiddenBuilds[act.build];
+
+                var el;
+                if (act.isMilestone) {
+                    // Render zero-duration activities (e.g. gate reviews, key dates) as a diamond marker
+                    var cx = x1;
+                    var cy = barMidY;
+                    var half = MILESTONE_SIZE;
+                    el = document.createElementNS(ns, 'path');
+                    var pts = 'M ' + cx + ' ' + (cy - half) +
+                        ' L ' + (cx + half) + ' ' + cy +
+                        ' L ' + cx + ' ' + (cy + half) +
+                        ' L ' + (cx - half) + ' ' + cy + ' Z';
+                    el.setAttribute('d', pts);
+                    el.setAttribute('class', 'milestone');
+                    el.setAttribute('fill', act.color);
+                    el.setAttribute('opacity', hidden ? 0 : 1);
+                    svg.appendChild(el);
+
+                    if (!hidden) {
+                        var mlabel = document.createElementNS(ns, 'text');
+                        mlabel.setAttribute('x', cx + half + 5);
+                        mlabel.setAttribute('y', cy);
+                        mlabel.setAttribute('dominant-baseline', 'middle');
+                        mlabel.setAttribute('font-size', '10px');
+                        mlabel.setAttribute('fill', '#1a1a2e');
+                        mlabel.textContent = act.name;
+                        mlabel.style.pointerEvents = 'none';
+                        svg.appendChild(mlabel);
+                    }
+                } else {
+                    el = document.createElementNS(ns, 'rect');
+                    el.setAttribute('x', x1);
+                    el.setAttribute('y', barY);
+                    el.setAttribute('width', w);
+                    el.setAttribute('height', barH);
+                    el.setAttribute('rx', 3);
+                    el.setAttribute('class', 'bar');
+                    el.setAttribute('fill', act.color);
+                    var opacity = 1;
+                    if (isOverlap && showOverlap) opacity = 0.55;
+                    if (isOverlap && !showOverlap) opacity = 1;
+                    if (isOverlap) el.setAttribute('stroke-dasharray', showOverlap ? '2,2' : 'none');
+                    el.setAttribute('opacity', hidden ? 0 : opacity);
+                    svg.appendChild(el);
+
+                    if (!hidden) {
+                        var clipId = 'clip-' + act.id + '-' + Math.round(x1);
+                        var clip = document.createElementNS(ns, 'clipPath');
+                        clip.setAttribute('id', clipId);
+                        var clipRect = document.createElementNS(ns, 'rect');
+                        clipRect.setAttribute('x', x1 + 2);
+                        clipRect.setAttribute('y', barY);
+                        clipRect.setAttribute('width', Math.max(0, w - 4));
+                        clipRect.setAttribute('height', barH);
+                        clip.appendChild(clipRect);
+                        defs.appendChild(clip);
+
+                        var text = document.createElementNS(ns, 'text');
+                        text.setAttribute('x', x1 + 4);
+                        text.setAttribute('y', barMidY);
+                        text.setAttribute('dominant-baseline', 'middle');
+                        text.setAttribute('font-size', '10px');
+                        text.setAttribute('fill', textColorFor(act.color));
+                        text.setAttribute('clip-path', 'url(#' + clipId + ')');
+                        text.textContent = act.name;
+                        text.style.pointerEvents = 'none';
+                        var titleEl2 = document.createElementNS(ns, 'title');
+                        titleEl2.textContent = act.name;
+                        text.appendChild(titleEl2);
+                        svg.appendChild(text);
+                    }
+                }
+
+                el.setAttribute('data-build', act.build);
+                el.style.pointerEvents = hidden ? 'none' : 'auto';
+                el.style.cursor = 'pointer';
+
+                el.addEventListener('mousemove', function (evt) {
+                    tooltip.style.display = 'block';
+                    tooltip.style.left = (evt.clientX + 14) + 'px';
+                    tooltip.style.top = (evt.clientY + 14) + 'px';
+                    tooltip.innerHTML = '<strong>' + act.name + '</strong><br>' +
+                        (act.product ? 'Product: ' + act.product + '<br>' : '') +
+                        (act.project ? 'Project: ' + act.project + '<br>' : '') +
+                        'Row: ' + act.codeLabel + '<br>' +
+                        'Build: ' + act.build + '<br>' +
+                        (act.isMilestone ? act.start.toLocaleDateString() : (act.start.toLocaleDateString() + ' → ' + act.end.toLocaleDateString())) +
+                        (act.predecessors.length ? '<br>Predecessors: ' + act.predecessors.join(', ') : '');
+                });
+                el.addEventListener('mouseleave', function () { tooltip.style.display = 'none'; });
+
+                barLookup[act.id] = { x1: x1, x2: x2, yMid: barMidY, build: act.build };
+            });
+        });
+
+        if (showDepsChk.checked) {
+            activities.forEach(function (act) {
+                act.predecessors.forEach(function (predId) {
+                    var from = barLookup[predId];
+                    var to = barLookup[act.id];
+                    if (!from || !to) return;
+                    if (state.hiddenBuilds[from.build] || state.hiddenBuilds[to.build]) return;
+                    var path = document.createElementNS(ns, 'path');
+                    // Straight diagonal connector from the end of the predecessor to the
+                    // start of the successor, matching the source template's link style.
+                    var d = 'M ' + from.x2 + ' ' + from.yMid + ' L ' + to.x1 + ' ' + to.yMid;
+                    path.setAttribute('d', d);
+                    path.setAttribute('class', 'dep-line');
+                    path.setAttribute('marker-end', 'url(#arrow)');
+                    svg.appendChild(path);
+                });
+            });
+        }
+
+        chartEmpty.style.display = 'none';
+        svg.style.display = 'block';
+    }
+
+    function renderLegend() {
+        legendEl.innerHTML = '';
+        Object.keys(state.buildColor).sort().forEach(function (build) {
+            var item = document.createElement('div');
+            item.className = 'legend-item' + (state.hiddenBuilds[build] ? ' off' : '');
+            var swatch = document.createElement('span');
+            swatch.className = 'legend-swatch';
+            swatch.style.background = state.buildColor[build];
+            item.appendChild(swatch);
+            var text = document.createElement('span');
+            text.textContent = build;
+            item.appendChild(text);
+            item.addEventListener('click', function () {
+                state.hiddenBuilds[build] = !state.hiddenBuilds[build];
+                render(state.activities);
+                renderLegend();
+            });
+            legendEl.appendChild(item);
+        });
+
+        if (state.activities.some(function (a) { return a.isGate; })) {
+            GATE_COLORS.forEach(function (gate) {
+                var item = document.createElement('div');
+                item.className = 'legend-item';
+                var swatch = document.createElement('span');
+                swatch.className = 'legend-swatch';
+                swatch.style.background = gate.color;
+                item.appendChild(swatch);
+                var text = document.createElement('span');
+                text.textContent = gate.label;
+                item.appendChild(text);
+                legendEl.appendChild(item);
+            });
+        }
+        if (state.activities.some(function (a) { return a.isMilestone && !a.isGate; })) {
+            var msItem = document.createElement('div');
+            msItem.className = 'legend-item';
+            var msSwatch = document.createElement('span');
+            msSwatch.className = 'legend-swatch';
+            msSwatch.style.background = '#555';
+            msSwatch.style.transform = 'rotate(45deg)';
+            msItem.appendChild(msSwatch);
+            var msText = document.createElement('span');
+            msText.textContent = 'Milestone';
+            msItem.appendChild(msText);
+            legendEl.appendChild(msItem);
+        }
+    }
+
+    showDepsChk.addEventListener('change', function () {
+        if (state.activities.length) render(state.activities);
+    });
+    showOverlapChk.addEventListener('change', function () {
+        if (state.activities.length) render(state.activities);
+    });
+
+    // Standard paper/plotter sizes in points (1pt = 1/72in), landscape (width > height).
+    var PAGE_SIZES = {
+        A4: [842, 595],
+        A3: [1191, 842],
+        A2: [1684, 1191],
+        A1: [2384, 1684],
+        A0: [3370, 2384],
+        Letter: [792, 612],
+        Tabloid: [1224, 792],
+        ArchD: [2592, 1728],
+        ArchE: [3456, 2592]
+    };
+
+    function getPageSizePt() {
+        var dims = PAGE_SIZES[pageSizeSel.value] || PAGE_SIZES.A3;
+        return { w: dims[0], h: dims[1] };
+    }
+
+    // Computes the uniform scale factor needed to shrink a chart of chartW x chartH
+    // pixels down to fit entirely within a single page of pageW x pageH points
+    // (assuming 96 CSS px = 72pt, i.e. 1px = 0.75pt), leaving a small margin.
+    function computeFitScale(chartW, chartH, pageW, pageH) {
+        var pxToPt = 0.75;
+        var marginPt = 18;
+        var availW = pageW - marginPt * 2;
+        var availH = pageH - marginPt * 2;
+        var scale = Math.min(availW / (chartW * pxToPt), availH / (chartH * pxToPt));
+        return Math.min(1, scale);
+    }
+
+    var printStyleTag = null;
+
+    function applyPrintScale() {
+        var width = parseInt(svg.getAttribute('width'), 10) || 100;
+        var height = parseInt(svg.getAttribute('height'), 10) || 100;
+        var page = getPageSizePt();
+        var scale = computeFitScale(width, height, page.w, page.h);
+        printStyleTag = document.createElement('style');
+        printStyleTag.textContent = '@media print {' +
+            '@page { size: ' + (page.w >= page.h ? 'landscape' : 'portrait') + '; margin: 10mm; }' +
+            '#chart-scroll { transform: scale(' + scale + '); transform-origin: top left; }' +
+            '}';
+        document.head.appendChild(printStyleTag);
+    }
+
+    function clearPrintScale() {
+        if (printStyleTag && printStyleTag.parentNode) {
+            printStyleTag.parentNode.removeChild(printStyleTag);
+        }
+        printStyleTag = null;
+    }
+
+    printBtn.addEventListener('click', function () {
+        applyPrintScale();
+        window.print();
+    });
+    window.addEventListener('afterprint', clearPrintScale);
+
+    // CSS classes used inside the SVG (bar/milestone/dep-line/etc.) live in the page's
+    // main <style> block, so they must be inlined into the SVG's own <defs> before it is
+    // serialized standalone — otherwise a rasterized/exported copy would lose all styling.
+    var SVG_EXPORT_STYLE =
+        '.bar{stroke:none;} .milestone{stroke:#1a1a2e;stroke-width:1;} ' +
+        '.grid-line{stroke:#e2e6ee;stroke-width:1;} .month-line{stroke:#dde2ec;stroke-width:1;} ' +
+        '.axis-text{font:11px sans-serif;fill:#666;} .row-label{font:12px sans-serif;fill:#1a1a2e;} ' +
+        '.dep-line{fill:none;stroke:#8a93a6;stroke-width:1.4;stroke-dasharray:3,3;}';
+
+    function buildExportSvgString() {
+        var clone = svg.cloneNode(true);
+        var styleEl = document.createElementNS('http://www.w3.org/2000/svg', 'style');
+        styleEl.textContent = SVG_EXPORT_STYLE;
+        clone.insertBefore(styleEl, clone.firstChild);
+        clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+        clone.style.background = '#ffffff';
+        var wrapperRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        wrapperRect.setAttribute('x', 0);
+        wrapperRect.setAttribute('y', 0);
+        wrapperRect.setAttribute('width', clone.getAttribute('width'));
+        wrapperRect.setAttribute('height', clone.getAttribute('height'));
+        wrapperRect.setAttribute('fill', '#ffffff');
+        clone.insertBefore(wrapperRect, styleEl.nextSibling);
+        return new XMLSerializer().serializeToString(clone);
+    }
+
+    pdfBtn.addEventListener('click', function () {
+        if (!state.activities.length) return;
+        var width = parseInt(svg.getAttribute('width'), 10) || 100;
+        var height = parseInt(svg.getAttribute('height'), 10) || 100;
+        var page = getPageSizePt();
+        var fitScale = computeFitScale(width, height, page.w, page.h);
+
+        // The chart's native SVG can be extremely wide for multi-year, many-build
+        // schedules (tens of thousands of pixels), which silently fails to rasterize
+        // on a <canvas> once past the browser's canvas size limit (this was the root
+        // cause of "unable to download the file"). Instead of rasterizing at the raw
+        // chart resolution, size the canvas to the chart's FINAL on-page dimensions at
+        // a fixed target DPI — the browser downsamples the SVG image directly to that
+        // size, so canvas dimensions stay small and bounded no matter how wide the
+        // underlying data is.
+        var pxToPt = 0.75;
+        var drawW = width * pxToPt * fitScale;
+        var drawH = height * pxToPt * fitScale;
+        // Higher DPI + capped-but-generous max canvas size gives noticeably crisper text
+        // and bars in the exported PDF (the previous 150 DPI / 10000px cap produced a
+        // blurry, low-resolution image once downsampled from very wide charts).
+        var TARGET_DPI = 300;
+        var MAX_CANVAS_DIM = 14000;
+        var canvasW = Math.round((drawW / 72) * TARGET_DPI);
+        var canvasH = Math.round((drawH / 72) * TARGET_DPI);
+        var overshoot = Math.max(canvasW / MAX_CANVAS_DIM, canvasH / MAX_CANVAS_DIM, 1);
+        canvasW = Math.max(1, Math.round(canvasW / overshoot));
+        canvasH = Math.max(1, Math.round(canvasH / overshoot));
+
+        pdfBtn.disabled = true;
+        var originalLabel = pdfBtn.textContent;
+        pdfBtn.textContent = 'Generating PDF…';
+        setStatus('Generating PDF…');
+
+        var svgString = buildExportSvgString();
+        var svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+        var url = URL.createObjectURL(svgBlob);
+        var img = new Image();
+
+        function cleanup() {
+            URL.revokeObjectURL(url);
+            pdfBtn.disabled = false;
+            pdfBtn.textContent = originalLabel;
+        }
+
+        img.onload = function () {
+            try {
+                var canvas = document.createElement('canvas');
+                canvas.width = canvasW;
+                canvas.height = canvasH;
+                var ctx = canvas.getContext('2d');
+                if (!ctx) throw new Error('Canvas 2D context unavailable.');
+                ctx.imageSmoothingEnabled = true;
+                if ('imageSmoothingQuality' in ctx) ctx.imageSmoothingQuality = 'high';
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+                var imgData = canvas.toDataURL('image/png');
+                var jsPDFCtor = window.jspdf && window.jspdf.jsPDF;
+                if (!jsPDFCtor) {
+                    throw new Error('PDF export library (jsPDF) failed to load — check your internet connection.');
+                }
+                var orientation = page.w >= page.h ? 'landscape' : 'portrait';
+                var pdf = new jsPDFCtor({
+                    orientation: orientation,
+                    unit: 'pt',
+                    format: [page.w, page.h]
+                });
+                var offsetX = (page.w - drawW) / 2;
+                var offsetY = (page.h - drawH) / 2;
+                pdf.addImage(imgData, 'PNG', offsetX, offsetY, drawW, drawH);
+                pdf.save('gantt-chart.pdf');
+                setStatus('PDF downloaded.', 'ok');
+            } catch (err) {
+                console.error(err);
+                setStatus('Failed to export PDF: ' + err.message, 'error');
+            } finally {
+                cleanup();
+            }
+        };
+        img.onerror = function () {
+            cleanup();
+            setStatus('Failed to export PDF: the chart image could not be rendered.', 'error');
+        };
+        img.src = url;
+    });
+})();
+</script>
+</body>
+</html>
